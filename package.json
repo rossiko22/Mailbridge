@@ -1,27 +1,20 @@
 {
-  "name": "okta-ticketing-system",
+  "name": "ticket-mail",
   "version": "1.0.0",
-  "description": "This is a web application for managing incoming Outlook emails as tickets. The goal is to help a support team organize its mailbox, assign responsibility, and track and have complete log of done work.",
+  "description": "A unified mail client: connect Outlook and Gmail mailboxes and read them together, with each mailbox listed separately on the side.",
   "main": "dist/server.js",
   "scripts": {
     "start backend": "tsx watch --include .env src/server.ts",
-    "generate-test-passwords": "tsx src/scripts/generate-password-hashes.ts",
     "migration": "tsx src/scripts/migrate.ts",
     "seed": "tsx src/scripts/seed-development.ts",
-    "test": "node --import tsx --test --test-isolation=none tests/*.test.ts",
+    "test": "node --import tsx --test tests/*.test.ts",
     "dev": "tsx watch --include .env src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
-    "test:database": "node --import tsx tests/users.database.ts && node --import tsx tests/emails.database.ts && node --import tsx tests/workflow.database.ts && node --import tsx tests/http.database.ts",
-    "test:browser": "node --import tsx tests/browser-workflow.mjs",
     "check": "npm run typecheck && npm test && npm run build",
     "migration:prod": "node dist/scripts/migrate.js",
-    "admin:create": "node dist/scripts/bootstrap-admin.js",
-    "admin:reset-password": "node dist/scripts/reset-password.js",
-    "outlook:check": "node dist/scripts/check-outlook.js",
-    "test:setup": "node --import tsx tests/clean-setup.mjs",
-    "test:deployment": "docker build -t ticket-mail:test . && node tests/deployment.mjs"
+    "admin:reset-password": "node dist/scripts/reset-password.js"
   },
   "repository": {
     "type": "git",
@@ -41,6 +34,7 @@
     "@types/express": "^5.0.6",
     "@types/express-session": "^1.19.0",
     "@types/node": "^26.6.4",
+    "@types/nodemailer": "^8.0.2",
     "@types/pg": "^8.23.1",
     "@types/sanitize-html": "^2.16.2",
     "playwright": "^1.64.0",
@@ -55,6 +49,7 @@
     "express": "^5.2.1",
     "express-session": "^1.19.0",
     "node-pg-migrate": "^9.0.0",
+    "nodemailer": "^10.1.0",
     "pg": "^8.23.1",
     "sanitize-html": "^2.18.0"
   },

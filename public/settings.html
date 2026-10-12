@@ -1,22 +1,28 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Settings · Company Mail Portal</title><link rel="icon" href="assets/images/company-mail-logo.png">
-<script src="js/theme.js"></script><link rel="stylesheet" href="css/base.css"><link rel="stylesheet" href="css/app.css"><link rel="stylesheet" href="css/settings.css"><link rel="stylesheet" href="css/mailbox.css">
-<script src="js/components/app-sidebar.js" defer></script><script src="js/components/app-navbar.js" defer></script><script src="js/app-client.js" defer></script><script src="js/settings.js" defer></script>
-</head><body data-page="settings"><a class="skip-link" href="#main-content">Skip to main content</a><div class="app-shell"><app-sidebar active="settings"></app-sidebar>
-<main class="workspace settings-workspace" id="main-content"><div class="settings-page"><header class="settings-heading"><div><h1>Settings</h1><p>Manage your Outlook connection.</p></div><app-navbar></app-navbar></header>
-<section class="panel"><h2>Outlook connection</h2><p id="oauth-feedback" role="status"></p><a class="button button--primary" id="connect-outlook" href="/emails/connection/authorize" hidden>Connect Microsoft Outlook</a><p id="connection-status" role="status">Loading connection…</p>
-<form id="token-form" class="mail-compose" hidden><p>In Graph Explorer, consent to <strong>User.Read, Mail.Read and Mail.Send</strong>, then copy the token from the Access token tab.</p>
-<label for="outlook-token">New access token<input id="outlook-token" class="input" type="password" autocomplete="off" spellcheck="false" maxlength="30000" required placeholder="Paste token without the Bearer prefix"></label>
-<p class="muted">Your saved token is never displayed. Saving replaces it immediately; no restart is required.</p>
-<div><button class="button button--primary" type="submit">Verify and save token</button></div><p id="token-feedback" role="status"></p></form></section>
-<section class="panel"><h2>Change your password</h2><form id="password-form" class="mail-compose">
-<label>Current password<input class="input" name="currentPassword" type="password" autocomplete="current-password" maxlength="1024" required></label>
-<label>New password<input class="input" name="newPassword" type="password" autocomplete="new-password" minlength="12" maxlength="1024" required></label>
-<p>Changing your password signs you out on every device.</p><div><button class="button" type="submit">Change password</button></div><p id="password-feedback" role="status"></p></form></section>
-<section class="panel" id="create-user-panel" hidden><h2>Create team member</h2>
-<form id="create-user-form" class="mail-compose"><label>Email<input class="input" type="email" name="email" maxlength="254" required></label>
-<label>Initial password<input class="input" type="password" name="password" minlength="12" maxlength="1024" autocomplete="new-password" required></label>
-<label>Role<select class="input" name="role"><option value="1">Software Developer</option><option value="2">IT Manager</option></select></label>
-<div><button class="button button--primary" type="submit">Create user</button></div><p id="create-user-status" role="status"></p></form></section>
-</div></main></div></body></html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Settings · Mailbridge</title>
+  <link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+  <script src="js/theme.js"></script>
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <script src="js/core.js" defer></script>
+  <script src="js/settings.js" defer></script>
+</head>
+<body>
+  <div class="app">
+    <header data-appbar></header>
+    <div class="workspace" id="workspace">
+      <aside class="sidebar" id="sidebar" aria-label="Settings sections">
+        <a class="btn btn--block" href="app.html" data-icon="mail">Back to mail</a>
+        <nav class="stack" id="settings-nav"></nav>
+      </aside>
+      <main class="pane settings" id="settings"></main>
+    </div>
+  </div>
+</body>
+</html>

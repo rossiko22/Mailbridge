@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from "express";
+import { MailError } from "../integrations/mail/errors.js";
 
 export function errorMiddleware(
     error: unknown,
@@ -17,9 +18,13 @@ export function errorMiddleware(
             return;
         }
     }
+    if (error instanceof MailError) {
+        res.status(error.status).json({ message: error.message });
+        return;
+    }
     if (error instanceof Error && (error.message === 'User already exists' ||
         ('code' in error && error.code === '23505' && 'constraint' in error && error.constraint === 'users_email_unique'))) {
-        res.status(409).json({ message: 'User already exists' });
+        res.status(409).json({ message: 'An account with this email already exists.' });
         return;
     }
     console.error(JSON.stringify({ event: 'request-error', requestId: res.locals.requestId, name: error instanceof Error ? error.name : 'Unknown error', code: error && typeof error === 'object' && 'code' in error ? error.code : undefined }));

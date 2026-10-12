@@ -1,0 +1,179 @@
+/*
+ * Design tokens: the single source of truth for color, type, spacing, radius and elevation.
+ * Every other stylesheet reads these variables; nothing else may hard-code a value.
+ * The look follows Microsoft Fluent / Outlook on the web: a blue app bar, neutral panes, one accent.
+ */
+:root {
+  color-scheme: light;
+
+  /* Brand */
+  --brand: #0f6cbd;
+  --brand-hover: #115ea3;
+  --brand-pressed: #0c3b5e;
+  --brand-tint: #ebf3fc;
+  --brand-tint-strong: #cfe4fa;
+  --on-brand: #ffffff;
+
+  /* Surfaces */
+  --canvas: #f5f5f5;
+  --surface: #ffffff;
+  --surface-sunken: #fafafa;
+  --surface-hover: #f5f5f5;
+  --surface-pressed: #ebebeb;
+  --surface-selected: var(--brand-tint);
+  --canvas-hover: #ebebeb;
+  --scrim: rgb(0 0 0 / 40%);
+  /* Email bodies are authored for white paper in every theme */
+  --paper: #ffffff;
+
+  /* App bar */
+  --appbar: #0f6cbd;
+  --appbar-hover: rgb(255 255 255 / 14%);
+  --appbar-text: #ffffff;
+  --appbar-field: rgb(255 255 255 / 92%);
+  --appbar-field-text: #242424;
+
+  /* Text */
+  --text: #242424;
+  --text-muted: #616161;
+  --text-subtle: #707070;
+  --text-link: #0f6cbd;
+
+  /* Lines */
+  --border: #e0e0e0;
+  --border-strong: #c7c7c7;
+  --focus: #0f6cbd;
+
+  /* Status */
+  --danger: #b10e1c;
+  --danger-bg: #fdf3f4;
+  --danger-border: #eeacb2;
+  --success: #0e700e;
+  --success-bg: #f1faf1;
+  --success-border: #9fd89f;
+  --warning: #835b00;
+  --warning-bg: #fff9f5;
+  --warning-border: #f9d9a7;
+  --info-bg: var(--brand-tint);
+
+  /* Mail account colors (assigned automatically, one per connected account) */
+  --account-blue: #0f6cbd;
+  --account-teal: #038387;
+  --account-purple: #7160e8;
+  --account-orange: #c4510b;
+  --account-green: #107c10;
+  --account-pink: #c239b3;
+  --account-red: #c50f1f;
+  --account-gray: #616161;
+
+  /* Sender avatars use a fixed set so a person always keeps the same color */
+  --person-0: #0f6cbd; --person-1: #038387; --person-2: #7160e8; --person-3: #c4510b;
+  --person-4: #107c10; --person-5: #c239b3; --person-6: #986f0b; --person-7: #4f6bed;
+  --on-person: #ffffff;
+
+  /* Type: Segoe UI on Windows (as in Outlook), the system face elsewhere */
+  --font: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Roboto, Arial, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, monospace;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --text-2xl: 28px;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --line: 1.4;
+
+  /* Spacing: a 4px grid */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+
+  /* Shape */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-pill: 999px;
+
+  /* Elevation */
+  --shadow-menu: 0 0 2px rgb(0 0 0 / 12%), 0 8px 16px rgb(0 0 0 / 14%);
+  --shadow-dialog: 0 0 8px rgb(0 0 0 / 12%), 0 32px 64px rgb(0 0 0 / 24%);
+
+  /* Layout */
+  --appbar-height: 48px;
+  --sidebar-width: 264px;
+  --list-width: 380px;
+  --control-height: 32px;
+  --control-height-lg: 40px;
+
+  /* Motion */
+  --ease: cubic-bezier(.33, 0, .67, 1);
+  --fast: 120ms;
+  --normal: 200ms;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --brand: #479ef5;
+  --brand-hover: #62abf5;
+  --brand-pressed: #96c6fa;
+  --brand-tint: #082338;
+  --brand-tint-strong: #0c3b5e;
+  --on-brand: #0a1f33;
+
+  --canvas: #1f1f1f;
+  --surface: #292929;
+  --surface-sunken: #242424;
+  --surface-hover: #333333;
+  --surface-pressed: #3d3d3d;
+  --canvas-hover: #333333;
+  --scrim: rgb(0 0 0 / 60%);
+
+  --appbar: #1f1f1f;
+  --appbar-hover: rgb(255 255 255 / 10%);
+  --appbar-text: #ffffff;
+  --appbar-field: #333333;
+  --appbar-field-text: #ffffff;
+
+  --text: #ffffff;
+  --text-muted: #d1d1d1;
+  --text-subtle: #adadad;
+  --text-link: #6cb8f6;
+
+  --border: #3d3d3d;
+  --border-strong: #5c5c5c;
+  --focus: #479ef5;
+
+  --danger: #f1707b;
+  --danger-bg: #3b1a1d;
+  --danger-border: #7a2d34;
+  --success: #6ccb6c;
+  --success-bg: #162816;
+  --success-border: #2f5c2f;
+  --warning: #f7c76b;
+  --warning-bg: #2e2412;
+  --warning-border: #6b5421;
+
+  --account-blue: #479ef5;
+  --account-teal: #26b5b9;
+  --account-purple: #a99cff;
+  --account-orange: #f0894b;
+  --account-green: #54b054;
+  --account-pink: #e57fd9;
+  --account-red: #f1707b;
+  --account-gray: #adadad;
+
+  --person-0: #479ef5; --person-1: #26b5b9; --person-2: #a99cff; --person-3: #f0894b;
+  --person-4: #54b054; --person-5: #e57fd9; --person-6: #d9a73a; --person-7: #8f9fff;
+  --on-person: #1f1f1f;
+
+  --shadow-menu: 0 0 2px rgb(0 0 0 / 40%), 0 8px 16px rgb(0 0 0 / 44%);
+  --shadow-dialog: 0 0 8px rgb(0 0 0 / 40%), 0 32px 64px rgb(0 0 0 / 56%);
+}

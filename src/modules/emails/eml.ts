@@ -1,4 +1,4 @@
-// A portable text snapshot of the imported record. Original MIME uses Graph instead.
+// A portable text snapshot of the saved record. The original MIME comes from the provider instead.
 export function storedEml(email: { id: string; subject: string; senderName: string; senderAddress: string; receivedAt: string | Date | null; body: string }, mailbox: string): string {
     const clean = (value: string) => value.replace(/[\r\n\x00-\x1f\x7f]/g, ' ');
     const encoded = (value: string) => {
@@ -18,8 +18,8 @@ export function storedEml(email: { id: string; subject: string; senderName: stri
         `From: ${encoded(email.senderName || email.senderAddress)} <${address(email.senderAddress)}>`,
         `To: <${address(mailbox)}>`, `Subject: ${encoded(email.subject)}`,
         ...(date && !Number.isNaN(date.getTime()) ? [`Date: ${date.toUTCString()}`] : []),
-        `Message-ID: <${email.id}@ticket-mail.local>`, 'MIME-Version: 1.0',
+        `Message-ID: <${email.id}@mail.local>`, 'MIME-Version: 1.0',
         'Content-Type: text/plain; charset=UTF-8', 'Content-Transfer-Encoding: base64',
-        'X-Ticket-Mail-Export: stored-text-snapshot', '', body, '',
+        'X-Mail-Export: stored-text-snapshot', '', body, '',
     ].join('\r\n');
 }

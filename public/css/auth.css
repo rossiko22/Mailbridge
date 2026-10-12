@@ -1,0 +1,18 @@
+/* Sign-in, registration and password pages. One card, same controls as the rest of the app. */
+.auth { display: grid; place-items: center; min-height: 100vh; min-height: 100dvh; padding: var(--space-6) var(--space-4); background: var(--canvas); }
+.auth__card { display: grid; gap: var(--space-5); width: min(100%, 440px); padding: var(--space-8); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-menu); }
+.auth__brand { display: flex; align-items: center; gap: var(--space-2); color: var(--text); font-size: var(--text-lg); font-weight: var(--weight-semibold); }
+.auth__brand:hover { text-decoration: none; }
+.auth__brand img { width: 28px; height: 28px; }
+.auth__head { display: grid; gap: var(--space-1); }
+.auth__title { font-size: var(--text-2xl); font-weight: var(--weight-semibold); line-height: 1.2; }
+.auth__form { display: grid; gap: var(--space-4); }
+.auth__links { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--space-2) var(--space-4); font-size: var(--text-md); }
+.auth__theme { position: fixed; top: var(--space-3); right: var(--space-3); }
+.auth__theme .icon-sun { display: none; }
+:root[data-theme="dark"] .auth__theme .icon-sun { display: block; }
+:root[data-theme="dark"] .auth__theme .icon-moon { display: none; }
+@media (max-width: 479px) {
+  .auth { align-items: start; padding: var(--space-4); }
+  .auth__card { padding: var(--space-5); box-shadow: none; }
+}

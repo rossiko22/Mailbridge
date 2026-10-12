@@ -1,11 +1,11 @@
-export interface MailAccess { userId: string; manage: boolean }
 export interface MailFilters {
     offset: number;
-    status: 'all' | 'unassigned' | 'progress' | 'finished';
-    view: 'all' | 'assigned' | 'mine';
-    assignee: string | null;
-    closedBy: string | null;
+    // null means every connected account ("All mail").
+    accountId: string | null;
+    unreadOnly: boolean;
     search: string;
     sort: 'newest' | 'oldest';
 }
-export const defaultFilters: MailFilters = { offset: 0, status: 'all', view: 'all', assignee: null, closedBy: null, search: '', sort: 'newest' };
+export const defaultFilters: MailFilters = { offset: 0, accountId: null, unreadOnly: false, search: '', sort: 'newest' };
+
+export const PAGE_SIZE = 50;

@@ -1,6 +1,6 @@
 import type * as repository from "../modules/users/users.repository.js";
 import type { NextFunction, Request, Response } from "express";
-import type {Role} from "../modules/users/users.types.js";
+import { toSafeUser } from "../modules/users/users.types.js";
 
 type UserRepository = typeof repository;
 
@@ -29,8 +29,7 @@ export function createAuthMiddleware(userRepository: UserRepository) {
                 return;
             }
 
-            const {passwordHash, ...safeUser} = user;
-            req.currentUser = safeUser;
+            req.currentUser = toSafeUser(user);
 
             next();
         } catch (error: unknown) {
@@ -38,31 +37,7 @@ export function createAuthMiddleware(userRepository: UserRepository) {
         }
     }
 
-    function requireRole(allowedRole: Role) {
-        return (
-            req: Request,
-            res: Response,
-            next: NextFunction
-        ): void => {
-            if(!req.currentUser) {
-                res.status(401).json({
-                    message: "Authentication required",
-                });
-                return;
-            }
-
-            if(req.currentUser.role !== allowedRole) {
-                res.status(403).json({
-                    message: "You do not have permission to use this action",
-                });
-                return;
-            }
-
-            next();
-        };
-    }
     return {
         requireAuth,
-        requireRole,
     }
 }

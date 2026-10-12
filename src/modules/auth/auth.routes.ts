@@ -7,7 +7,11 @@ type AuthController = ReturnType<typeof createAuthController>;
 export function createAuthRouter(authController: AuthController, auth: ReturnType<typeof createAuthMiddleware>) {
     const router = Router();
 
+    router.get("/config", authController.config);
     router.post("/login", authController.login);
+    router.post("/register", authController.register);
+    router.post("/forgot", authController.forgotPassword);
+    router.post("/reset", authController.resetPassword);
     router.post('/password', auth.requireAuth, authController.changePassword);
     router.get('/me', auth.requireAuth, (req, res) => {
         res.set('Cache-Control', 'no-store').json({ user: req.currentUser });

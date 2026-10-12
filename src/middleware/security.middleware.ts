@@ -21,20 +21,25 @@ export const securityHeaders: RequestHandler = (req, res, next) => {
     next();
 };
 
-export function loginThrottle(pool: Pool, secret: string): RequestHandler {
+export interface ThrottleLimits { perIp: number; perAccount?: number }
+
+// Counts attempts per client address and, when the body carries an email, per account.
+// Keys are hashed so the table never stores addresses. Each scope keeps its own counters.
+export function throttle(pool: Pool, secret: string, scope: string, limits: ThrottleLimits, message = 'Too many attempts. Wait 15 minutes and try again.'): RequestHandler {
     return async (req, res, next) => {
         try {
             const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase().slice(0, 254) : '';
-            const identities = [`ip:${req.ip}`, `account:${email}`];
-            for (let i = 0; i < identities.length; i++) {
-                const key = createHmac('sha256', secret).update(identities[i]!).digest('hex');
+            const identities: Array<[string, number]> = [[`${scope}:ip:${req.ip}`, limits.perIp]];
+            if (limits.perAccount !== undefined) identities.push([`${scope}:account:${email}`, limits.perAccount]);
+            for (const [identity, limit] of identities) {
+                const key = createHmac('sha256', secret).update(identity).digest('hex');
                 const result = await pool.query(`INSERT INTO login_attempts(key,attempts,window_start) VALUES ($1,1,NOW())
                     ON CONFLICT (key) DO UPDATE SET
                     attempts=CASE WHEN login_attempts.window_start < NOW()-INTERVAL '15 minutes' THEN 1 ELSE login_attempts.attempts+1 END,
                     window_start=CASE WHEN login_attempts.window_start < NOW()-INTERVAL '15 minutes' THEN NOW() ELSE login_attempts.window_start END
                     RETURNING attempts`, [key]);
-                if (result.rows[0].attempts > (i === 0 ? 50 : 10)) {
-                    res.set('Retry-After','900').status(429).json({ message: 'Too many sign-in attempts. Wait 15 minutes and try again.' }); return;
+                if (result.rows[0].attempts > limit) {
+                    res.set('Retry-After','900').status(429).json({ message }); return;
                 }
             }
             await pool.query("DELETE FROM login_attempts WHERE window_start < NOW()-INTERVAL '1 day'");

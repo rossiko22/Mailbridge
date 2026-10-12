@@ -1,23 +1,17 @@
-
-import {Role, type SafeUser, type User} from "./users.types.js";
+import {type SafeUser, toSafeUser} from "./users.types.js";
 import type * as repository from "./users.repository.js";
 import {hashPassword, verifyHashPassword} from "../../security/password.js";
 import type { UUID } from 'node:crypto';
+import { parseAvatar } from "./avatar.js";
 
 
 type UserRepository = typeof repository;
-
-function toSafeUser(user: User): SafeUser {
-    const { passwordHash, ...safeUser } = user;
-    return safeUser;
-}
 
 export function createUserService(userRepository: UserRepository) {
     async function create(
         email: string,
         password: string,
-        role: Role,
-        avatarPath: string
+        displayName = ''
     ): Promise<SafeUser> {
 
         const normalizedEmail = email.trim();
@@ -29,7 +23,7 @@ export function createUserService(userRepository: UserRepository) {
 
         const hashedPassword = await hashPassword(password);
 
-        const createdUser = await userRepository.create(normalizedEmail, hashedPassword, role, avatarPath);
+        const createdUser = await userRepository.create(normalizedEmail, hashedPassword, displayName.trim());
 
         return toSafeUser(createdUser);
     }
@@ -55,9 +49,26 @@ export function createUserService(userRepository: UserRepository) {
         await userRepository.updatePassword(userId, await hashPassword(newPassword));
         return true;
     }
+    async function updateDisplayName(userId: UUID, displayName: string): Promise<SafeUser> {
+        await userRepository.updateDisplayName(userId, displayName.trim());
+        const user = await userRepository.findById(userId);
+        if (!user) throw new Error('User not found');
+        return toSafeUser(user);
+    }
+    // Returns false when the upload is not a valid, small PNG, JPEG or WebP image.
+    async function setAvatar(userId: UUID, dataUrl: unknown): Promise<boolean> {
+        const image = parseAvatar(dataUrl);
+        if (!image) return false;
+        await userRepository.setAvatar(userId, image.contentType, image.data);
+        return true;
+    }
     return {
         changePassword,
         create,
         validateLogin,
+        updateDisplayName,
+        setAvatar,
+        getAvatar: userRepository.getAvatar,
+        removeAvatar: userRepository.removeAvatar,
     }
 }

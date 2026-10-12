@@ -1,19 +1,30 @@
 import type {UUID} from "node:crypto";
 
-export enum Role {
-    SOFTWARE_DEVELOPER = 1,
-    IT_MANAGER = 2
-}
-
 export type User = {
     userId: UUID,
     email: string,
+    displayName: string,
     passwordHash: string,
-    role: Role,
-    avatarPath: string,
     isActive: boolean,
     createdAt: Date,
     updatedAt: Date,
+    avatarUpdatedAt: Date | null,
 }
 
-export type SafeUser = Omit<User, "passwordHash">
+// What the browser may see. The avatar URL changes whenever the photo does, so caches never go stale.
+export type SafeUser = {
+    userId: UUID,
+    email: string,
+    displayName: string,
+    isActive: boolean,
+    createdAt: Date,
+    updatedAt: Date,
+    avatarUrl: string | null,
+}
+
+export function toSafeUser(user: User): SafeUser {
+    const { passwordHash, avatarUpdatedAt, ...rest } = user;
+    return { ...rest, avatarUrl: avatarUpdatedAt ? `/users/me/avatar?v=${new Date(avatarUpdatedAt).getTime()}` : null };
+}
+
+export type AvatarImage = { contentType: 'image/png' | 'image/jpeg' | 'image/webp', data: Buffer, updatedAt: Date };

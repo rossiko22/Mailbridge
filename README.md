@@ -1,57 +1,51 @@
-# Ticket Mail – Outlook Ticketing System
+# Mailbridge – unified mail client
 
-Spletna aplikacija za obravnavo Outlookove pošte kot podpornih zahtevkov. Uporablja Node.js 24, Express 5, TypeScript, PostgreSQL 18 ter HTML/CSS/JavaScript. En strežnik ponuja uporabniški vmesnik in API; ena namestitev uporablja en poštni predal.
+Read Outlook and Gmail in one place. All mail from every connected account appears together, and each mailbox is also listed on its own in the sidebar. Node.js 24, Express 5, TypeScript, PostgreSQL, plain HTML/CSS/JS (no build step for the front end).
 
-Podprti so prijava in odjava, uporabniške vloge, ustvarjanje članov ekipe, sprememba gesla, Microsoft OAuth oziroma Microsoft 365 aplikacijske poverilnice, sinhronizacija Inboxa, iskanje in filtri, dodeljevanje, zaključevanje in ponovno odpiranje zahtevkov, zgodovina, odgovori, posredovanje, nova sporočila, priloge in izvoz EML.
+## Features
 
-## Dokumentacija za oddajo 1. naloge
+- Sign in, **create an account**, **forgot / reset password** (single-use link, valid 30 minutes, emailed over SMTP).
+- Connect any number of **Outlook** (Microsoft Graph) and **Gmail** accounts with OAuth. Tokens are stored encrypted.
+- One inbox for all accounts, per-account views, unread filter, search, sorting, unread counts.
+- Read mail safely (sandboxed body, remote images off by default), attachments, conversation history, `.eml` download.
+- Reply, forward and compose from any connected account. Mark read/unread (written back to the provider).
+- **Settings**: profile photo, display name, connected accounts, password, light/dark theme.
 
-- [Izbira projekta in obseg](documentation/izbira-projekta.md)
-- [Vzpostavitvena dokumentacija](documentation/vzpostavitev.md)
-- [Ključne funkcionalnosti in demonstracija](documentation/funkcionalnosti.md)
-- [Stanje testiranja in zagotavljanja kakovosti](documentation/stanje-testiranja-in-zagotavljanja-kakovosti.md)
-- [Uporaba generativne umetne inteligence](documentation/uporaba-ui.md)
-
-## Produkcijska uporaba z resničnim Outlookom
-
-- [Microsoft Outlook: potrebni podatki, dovoljenja in povezava](documentation/microsoft-graph.md)
-- [Namestitev na strežnik, HTTPS, nadgradnje in varnostne kopije](documentation/produkcija.md)
-- [API in pravila dostopa](documentation/api.md)
-
-Produkcijski paket vključuje Dockerfile, PostgreSQL, Caddy za HTTPS, trajne seje in šifrirano hrambo Microsoftovih žetonov. Potrebujete svoj strežnik, domeno, Microsoftovo registracijo aplikacije ter veljavne poverilnice. Samodejni testi simulirajo Microsoftove odzive in ne pošiljajo dejanske pošte. Po vnosu novega žetona je bila 12. 10. 2026 uspešno preverjena resnična sinhronizacija, delta nadaljevanje, originalni EML, priloga in brskalniški prikaz. Produkcijski OAuth in dejanska dostava pošte še zahtevata preverjanje z vašimi podatki. To ni že objavljena javna namestitev.
-
-## Hiter lokalni zagon
+## Quick start
 
 ```sh
 npm ci
 cp .env-example .env
-# Uporabite obstoječo .env, če jo že imate; ne prepišite svojih nastavitev.
 docker compose up -d postgres
 npm run migration
-npm run seed
-npm run dev
+npm run seed        # demo user demo@example.test / Demo-Password-123! with two demo mailboxes
+npm run dev         # http://localhost:3000
 ```
 
-Odprite <http://localhost:3000>. Privzeti primer nastavitev uporablja lokalni demonstracijski način brez dostopa do Microsofta:
+Without OAuth credentials the demo mailboxes still work; the Connect buttons are disabled until a provider is configured. Without SMTP, reset links are printed to the server log (development only).
 
-| Račun | Geslo | Vloga |
-| --- | --- | --- |
-| `manager@example.test` | `Manager-Test-123!` | IT Manager in lastnik demo predala |
-| `developer@example.test` | `Developer-Test-123!` | Član ekipe; vidi njemu dodeljene zahtevke |
+## Connecting real mailboxes
 
-Demo gesel in `npm run seed` ne uporabljajte v produkciji. Skripta za seed zavrne okolje, ki ni `development`. Za resnično pošto nastavite OAuth po [navodilih](documentation/microsoft-graph.md).
+Register an app with each provider and set the redirect URIs:
 
-## Preverjanje
+| Provider | Redirect URI | Env vars | Scopes |
+| --- | --- | --- | --- |
+| Microsoft (Azure app registration) | `<PUBLIC_ORIGIN>/accounts/callback/outlook` | `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_TENANT` (default `common`) | `User.Read Mail.ReadWrite Mail.Send offline_access` |
+| Google (Cloud console, OAuth client "Web") | `<PUBLIC_ORIGIN>/accounts/callback/gmail` | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Gmail API: read/modify and send |
+
+Notes:
+- `GMAIL_ALLOWED_EMAILS=a@x.com,b@y.com` limits the Gmail option to those app users, which fits an unverified Google app limited to test users. Outlook stays open to everyone.
+- Gmail's mail scopes are *restricted*. While the Google app is in "Testing" only listed test users can connect (and tokens expire after 7 days); public use needs Google's verification.
+- First sync loads the last 90 days of the inbox; later syncs are incremental. If Gmail's history window expires, the sync rebuilds itself.
+- Gmail forwards do not include the original attachments.
+- Migration `008_unified_mailboxes.sql` replaces the old ticket schema and **deletes previously cached emails** (they are re-synced from the provider). It is not reversible.
+
+## Configuration
+
+See `.env-example` and `.env.production.example`. Key variables: `PUBLIC_ORIGIN`, `SESSION_SECRET`, `TOKEN_ENCRYPTION_KEY`, `ALLOW_REGISTRATION`, `MICROSOFT_*`, `GOOGLE_*`, `SMTP_*`, `POSTGRES_*`. Production deployment files (Docker, Caddy HTTPS, backups) are `Dockerfile`, `compose.production.yaml` and `deploy/`.
+
+## Checks
 
 ```sh
-npm run check           # TypeScript, enotski/pogodbeni testi, produkcijska kompilacija
-npm run test:database   # Prava PostgreSQL baza; lastni testni podatki se odstranijo
-npx playwright install chromium
-npm run test:browser    # Pravi brskalnik, strežnik in baza; Microsoft je simuliran
-npm run test:setup      # Začasna baza; zahteva dovoljenje CREATEDB
-npm run test:deployment # Docker slika, začasna baza, produkcijski zagon in backup/restore
+npm run check    # typecheck, unit tests, build
 ```
-
-Podroben obseg, izvedeni rezultati, omejitve ter uporaba AI so v dokumentu [Stanje testiranja in zagotavljanja kakovosti](documentation/stanje-testiranja-in-zagotavljanja-kakovosti.md).
-
-Avtor projekta: Marko Spasovski. Pri dopolnitvah kode, testov in dokumentacije je bil uporabljen OpenAI Codex; glejte [izjavo](documentation/uporaba-ui.md).

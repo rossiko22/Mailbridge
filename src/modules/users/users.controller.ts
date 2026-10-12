@@ -1,78 +1,49 @@
 import type {createUserService} from "./users.service.js";
 import type {Request, Response, NextFunction} from "express";
-import {Role} from "./users.types.js";
+import { MAX_AVATAR_BYTES } from "./avatar.js";
 
 type UserService = ReturnType<typeof createUserService>;
 
+export const MAX_DISPLAY_NAME = 80;
+
 export function createUserController(userService: UserService) {
-    async function create(
-        req: Request,
-        res: Response,
-        next: NextFunction
-    ): Promise<void> {
-        try{
-            const body: unknown = req.body;
-
-            if(
-                typeof body !== "object" ||
-                body === null ||
-                !("email" in body) ||
-                !("password" in body) ||
-                !("role" in body) ||
-                !("avatarPath" in body)
-            ){
-                res.status(400).json({
-                    message: "Email, password, role and avatar path are required."
-                });
+    async function updateProfile(req: Request, res: Response, next: NextFunction): Promise<void> {
+        try {
+            const { displayName } = req.body ?? {};
+            if (typeof displayName !== 'string' || displayName.trim().length > MAX_DISPLAY_NAME || /[\x00-\x1f\x7f]/.test(displayName)) {
+                res.status(400).json({ message: `Enter a name of up to ${MAX_DISPLAY_NAME} characters.` });
                 return;
             }
-
-            const { email, password, role, avatarPath } = body;
-
-            if(
-                typeof email !== "string" ||
-                typeof password !== "string" ||
-                typeof avatarPath !== "string" ||
-                email.trim() === "" ||
-                password.length < 12 || password.length > 1024 || email.length > 254 ||
-                avatarPath === ""
-            ) {
-                res.status(400).json({
-                    message: "Provide an email (up to 254 characters), a password (12–1024 characters) and an avatar path.",
-                })
-                return;
-            }
-
-            // Basic format check, not verification of mailbox ownership.
-            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-                res.status(400).json({
-                    message: "A valid email address is required.",
-                });
-                return;
-            }
-
-            if(
-                role !== Role.SOFTWARE_DEVELOPER &&
-                role !== Role.IT_MANAGER
-            ) {
-                res.status(400).json({
-                    message: "Role must be 1 or 2",
-                });
-                return;
-            }
-
-            const user = await userService.create(
-                email.trim(),
-                password,
-                role,
-                avatarPath
-            );
-
-            res.status(201).json({ user });
-
-        } catch (error: unknown) {
-            next(error);
-        }
+            res.json({ user: await userService.updateDisplayName(req.currentUser!.userId, displayName) });
+        } catch (error: unknown) { next(error); }
     }
-    return { create }
+
+    async function uploadAvatar(req: Request, res: Response, next: NextFunction): Promise<void> {
+        try {
+            if (!await userService.setAvatar(req.currentUser!.userId, req.body?.image)) {
+                res.status(400).json({ message: `Choose a PNG, JPEG or WebP image of up to ${MAX_AVATAR_BYTES / 1024} KB.` });
+                return;
+            }
+            res.json({ saved: true });
+        } catch (error: unknown) { next(error); }
+    }
+
+    async function showAvatar(req: Request, res: Response, next: NextFunction): Promise<void> {
+        try {
+            const avatar = await userService.getAvatar(req.currentUser!.userId);
+            if (!avatar) { res.status(404).json({ message: 'No profile photo.' }); return; }
+            // The URL carries the upload time, so the browser may keep it privately for a long while.
+            res.set({ 'Cache-Control': 'private, max-age=31536000, immutable', 'X-Content-Type-Options': 'nosniff',
+                'Content-Security-Policy': "default-src 'none'; sandbox" }).type(avatar.contentType).send(avatar.data);
+        } catch (error: unknown) { next(error); }
+    }
+
+    async function deleteAvatar(req: Request, res: Response, next: NextFunction): Promise<void> {
+        try {
+            await userService.removeAvatar(req.currentUser!.userId);
+            res.json({ removed: true });
+        } catch (error: unknown) { next(error); }
+    }
+
+    return { updateProfile, uploadAvatar, showAvatar, deleteAvatar }
 }

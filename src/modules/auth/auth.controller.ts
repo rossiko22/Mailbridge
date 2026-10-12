@@ -1,9 +1,24 @@
 import type {Request, Response, NextFunction} from "express";
 import type {createUserService} from "../users/users.service.js";
+import type {SafeUser} from "../users/users.types.js";
+import type {AuthService} from "./auth.service.js";
+import { EMAIL_MAX, PASSWORD_MAX, passwordRule, validEmail, validNewPassword } from "./auth.validation.js";
+import { MAX_DISPLAY_NAME } from "../users/users.controller.js";
 
 type UserService = ReturnType<typeof createUserService>;
 
-export function createAuthController(userService: UserService) {
+export function createAuthController(userService: UserService, authService: AuthService, allowRegistration = true) {
+    // Replaces the session ID (preventing fixation) and stores only the user ID.
+    async function startSession(req: Request, user: SafeUser): Promise<void> {
+        await new Promise<void>((resolve, reject) => {
+            req.session.regenerate(error => error ? reject(error) : resolve());
+        });
+        req.session.userId = user.userId;
+        await new Promise<void>((resolve, reject) => {
+            req.session.save(error => error ? reject(error) : resolve());
+        });
+    }
+
     async function login(
         req: Request,
         res: Response,
@@ -30,7 +45,7 @@ export function createAuthController(userService: UserService) {
                 typeof email !== "string" ||
                 typeof password !== "string" ||
                 email.trim() === "" ||
-                email.length > 254 || password.length > 1024 || password === ""
+                email.length > EMAIL_MAX || password.length > PASSWORD_MAX || password === ""
             ){
                 res.status(400).json({
                     message: "Invalid email or password."
@@ -47,43 +62,68 @@ export function createAuthController(userService: UserService) {
                 return;
             }
 
-            // Session creation will go here
-            await new Promise<void>((resolve, reject) => {
-                req.session.regenerate((error => {
-                    if(error){
-                        reject(error);
-                        return;
-                    }
-
-                    resolve();
-                }));
-            });
-
-            // Store only the user ID, not the password or password hash
-            req.session.userId = user.userId;
-
-            // Persist the session before reporting success
-            await new Promise<void>((resolve, reject) => {
-                req.session.save((error) => {
-                    if(error){
-                        reject(error);
-                        return;
-                    }
-
-                    resolve();
-                });
-            });
-
+            await startSession(req, user);
             res.status(200).json({user})
         } catch (error: unknown) {
             next(error);
         }
     }
+
+    async function register(req: Request, res: Response, next: NextFunction): Promise<void> {
+        try {
+            if (!allowRegistration) {
+                res.status(403).json({ message: 'Registration is turned off on this server.' });
+                return;
+            }
+            const { email, password, displayName = '' } = req.body ?? {};
+            if (!validEmail(email)) { res.status(400).json({ message: 'Enter a valid email address.' }); return; }
+            if (!validNewPassword(password)) { res.status(400).json({ message: passwordRule }); return; }
+            if (typeof displayName !== 'string' || displayName.trim().length > MAX_DISPLAY_NAME || /[\x00-\x1f\x7f]/.test(displayName)) {
+                res.status(400).json({ message: `Enter a name of up to ${MAX_DISPLAY_NAME} characters.` });
+                return;
+            }
+            const user = await userService.create(email, password, displayName);
+            await startSession(req, user);
+            res.status(201).json({ user });
+        } catch (error: unknown) {
+            next(error);
+        }
+    }
+
+    async function forgotPassword(req: Request, res: Response, next: NextFunction): Promise<void> {
+        try {
+            const { email } = req.body ?? {};
+            if (!validEmail(email)) { res.status(400).json({ message: 'Enter a valid email address.' }); return; }
+            await authService.requestPasswordReset(email);
+            res.json({ message: 'If an account exists for that address, a reset link is on its way. It stays valid for 30 minutes.' });
+        } catch (error: unknown) {
+            next(error);
+        }
+    }
+
+    async function resetPassword(req: Request, res: Response, next: NextFunction): Promise<void> {
+        try {
+            const { token, password } = req.body ?? {};
+            if (typeof token !== 'string' || !/^[\w-]{20,100}$/.test(token)) {
+                res.status(400).json({ message: 'This reset link is invalid or has expired. Request a new one.' });
+                return;
+            }
+            if (!validNewPassword(password)) { res.status(400).json({ message: passwordRule }); return; }
+            if (!await authService.resetPassword(token, password)) {
+                res.status(400).json({ message: 'This reset link is invalid or has expired. Request a new one.' });
+                return;
+            }
+            res.json({ reset: true });
+        } catch (error: unknown) {
+            next(error);
+        }
+    }
+
     async function changePassword(req: Request, res: Response, next: NextFunction) {
         try {
             const { currentPassword, newPassword } = req.body ?? {};
-            if (typeof currentPassword !== 'string' || currentPassword.length > 1024 || typeof newPassword !== 'string' || newPassword.length < 12 || newPassword.length > 1024) {
-                res.status(400).json({ message: 'Provide your current password and a new password of 12–1024 characters.' }); return;
+            if (typeof currentPassword !== 'string' || currentPassword.length > PASSWORD_MAX || !validNewPassword(newPassword)) {
+                res.status(400).json({ message: `Provide your current password. ${passwordRule}` }); return;
             }
             if (!await userService.changePassword(req.currentUser!.userId, currentPassword, newPassword)) {
                 res.status(400).json({ message: 'Current password is incorrect.' }); return;
@@ -92,5 +132,9 @@ export function createAuthController(userService: UserService) {
             res.clearCookie('session', { path: '/' }).json({ changed: true });
         } catch (error) { next(error); }
     }
-    return { login, changePassword };
+    // Lets the sign-in page show or hide "Create account" without trying it.
+    function config(_req: Request, res: Response): void {
+        res.json({ registration: allowRegistration });
+    }
+    return { login, register, forgotPassword, resetPassword, changePassword, config };
 }

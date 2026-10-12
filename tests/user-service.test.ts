@@ -9,9 +9,9 @@ test('new users are stored with a password hash and responses omit that hash', a
         assert.equal(email,'person@example.com');
         assert.notEqual(passwordHash,'test-password');
         assert.equal(await verifyHashPassword(passwordHash,'test-password'),true);
-        return { email, passwordHash };
+        return { id: 'u1', email, passwordHash, displayName: '', avatarUrl: null, createdAt: new Date() };
     } } as unknown as typeof repository);
-    const user = await service.create(' person@example.com ','test-password',1,'');
+    const user = await service.create(' person@example.com ','test-password','Person');
     assert.equal('passwordHash' in user,false);
 });
 test('unknown users produce an invalid-login result instead of an internal server error', async () => {

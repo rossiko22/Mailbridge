@@ -1,33 +1,10 @@
-export interface ApplicationGraphConfig {
-    authMode?: 'application';
-    tenantId: string;
-    clientId: string;
-    clientSecret: string;
-    mailbox: string;
-}
+import { MailError } from '../mail/errors.js';
+import { readDownload } from '../mail/http.js';
+import { INITIAL_SYNC_DAYS, type MailAttachment, type MailBody, type MailClient, type NewMessage, type SyncedFields, type SyncedMessage, type SyncPage } from '../mail/types.js';
 
-export interface AccessTokenGraphConfig {
-    authMode: 'access_token';
-    accessToken: string;
-    mailbox: string;
-    ownerEmail: string;
-    tokenSource?: 'oauth';
-}
+export class GraphError extends MailError {}
 
-export type GraphConfig = ApplicationGraphConfig | AccessTokenGraphConfig;
-
-export interface OAuthGraphConfig {
-    authMode: 'oauth';
-    tenantId: string;
-    clientId: string;
-    clientSecret: string;
-    mailbox: string;
-    ownerEmail: string;
-    redirectUri: string;
-}
-export type OutlookConfig = GraphConfig | OAuthGraphConfig;
-
-export interface MailMessage {
+interface GraphMessage {
     id: string;
     subject?: string;
     from?: { emailAddress?: { name?: string; address?: string } };
@@ -36,45 +13,18 @@ export interface MailMessage {
     receivedDateTime?: string;
     hasAttachments?: boolean;
     isRead?: boolean;
-    "@removed"?: unknown;
+    '@removed'?: unknown;
 }
+interface GraphPage { value: GraphMessage[]; '@odata.nextLink'?: string; '@odata.deltaLink'?: string }
 
-export interface MailPage {
-    value: MailMessage[];
-    "@odata.nextLink"?: string;
-    "@odata.deltaLink"?: string;
-}
-
-export interface NewMessage { subject: string; body: string; to: string[]; cc: string[]; bcc: string[] }
-export interface MailAttachment { id: string; name: string; size: number; contentType: string; '@odata.type'?: string }
-
-// Bound downloads even when the upstream server omits Content-Length.
-export async function readDownload(response: Response, limit = 25 * 1024 * 1024): Promise<Buffer> {
-    if (Number(response.headers.get('content-length')) > limit) {
-        await response.body?.cancel();
-        throw new GraphError(413, 'Download exceeds the 25 MiB limit. Open it in Outlook.');
-    }
-    const reader = response.body?.getReader();
-    if (!reader) return Buffer.alloc(0);
-    const chunks: Uint8Array[] = []; let size = 0;
-    try {
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            size += value.length;
-            if (size > limit) { await reader.cancel(); throw new GraphError(413, 'Download exceeds the 25 MiB limit. Open it in Outlook.'); }
-            chunks.push(value);
-        }
-        return Buffer.concat(chunks);
-    } finally { reader.releaseLock(); }
-}
-
-export class GraphError extends Error {
-    constructor(public status: number, message: string) { super(message); }
-}
+const ORIGIN = 'https://graph.microsoft.com';
+const ROOT = `${ORIGIN}/v1.0/me`;
+const DELTA_PATH = /^\/v1\.0\/(?:me|users\/[^/]+)\/mailFolders\/inbox\/messages\/delta$/;
+const ATTACHMENTS_PATH = /^\/v1\.0\/(?:me|users\/[^/]+)\/messages\/[^/]+\/attachments$/;
+const SELECT = 'id,subject,from,bodyPreview,body,receivedDateTime,hasAttachments,isRead';
 
 // Graph emits both key-as-segment and OData key-predicate continuation URLs.
-// Canonicalize only the path for comparison; send the original URL/token unchanged.
+// Canonicalize only the path for comparison; send the original URL unchanged.
 export function canonicalGraphPath(pathname: string): string {
     try {
         return decodeURIComponent(pathname)
@@ -84,161 +34,131 @@ export function canonicalGraphPath(pathname: string): string {
     } catch { throw new GraphError(502, 'Invalid Microsoft synchronization cursor.'); }
 }
 
-export function createGraphClient(config: GraphConfig, request: typeof fetch = fetch) {
-    let token: { value: string; expiresAt: number } | undefined;
-    const path = config.authMode === 'access_token'
-        ? '/v1.0/me/mailFolders/inbox/messages/delta'
-        : `/v1.0/users/${encodeURIComponent(config.mailbox)}/mailFolders/inbox/messages/delta`;
-    const initial = new URL(`https://graph.microsoft.com${path}`);
-    initial.searchParams.set('$select', 'id,subject,from,bodyPreview,body,receivedDateTime,hasAttachments,isRead');
+export function toSyncedMessage(message: GraphMessage): SyncedMessage {
+    if (message['@removed']) return { id: message.id, removed: true, fields: {} };
+    const fields: Partial<SyncedFields> = {};
+    if ('subject' in message) fields.subject = message.subject ?? '';
+    if ('from' in message) fields.sender = { name: message.from?.emailAddress?.name ?? '', address: message.from?.emailAddress?.address ?? '' };
+    if ('bodyPreview' in message) fields.preview = message.bodyPreview ?? '';
+    if ('body' in message) fields.bodyText = message.body?.content ?? '';
+    if ('receivedDateTime' in message) fields.receivedAt = message.receivedDateTime ?? null;
+    if ('hasAttachments' in message) fields.hasAttachments = Boolean(message.hasAttachments);
+    if ('isRead' in message) fields.isRead = Boolean(message.isRead);
+    return { id: message.id, fields };
+}
 
-    async function accessToken() {
-        if (config.authMode === 'access_token') return config.accessToken;
-        if (token && token.expiresAt > Date.now() + 60_000) return token.value;
-        const response = await request(`https://login.microsoftonline.com/${encodeURIComponent(config.tenantId)}/oauth2/v2.0/token`, {
-            method: 'POST',
-            body: new URLSearchParams({ client_id: config.clientId, client_secret: config.clientSecret,
-                grant_type: 'client_credentials', scope: 'https://graph.microsoft.com/.default' }),
-            signal: AbortSignal.timeout(30_000),
-            redirect: 'error',
-        });
-        if (!response.ok) throw new GraphError(502, 'Microsoft authentication failed. Check the app credentials and tenant.');
-        const data = await response.json() as { access_token?: string; expires_in?: number };
-        if (!data.access_token || typeof data.expires_in !== 'number') throw new GraphError(502, 'Invalid Microsoft token response.');
-        token = { value: data.access_token, expiresAt: Date.now() + data.expires_in * 1000 };
-        return token.value;
+export function createGraphClient(getToken: () => Promise<string>, request: typeof fetch = fetch, now: () => number = Date.now): MailClient {
+    function initialUrl() {
+        const since = new Date(now() - INITIAL_SYNC_DAYS * 86_400_000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+        return `${ROOT}/mailFolders/inbox/messages/delta?$select=${SELECT}&$filter=receivedDateTime%20ge%20${since}`;
     }
 
-    const expiredTokenMessage = config.authMode !== 'access_token'
-        ? 'Microsoft rejected the application token. Check the tenant, client secret and mailbox permissions.'
-        : config.tokenSource === 'oauth'
-            ? 'Microsoft rejected the Outlook authorization. Reconnect Microsoft Outlook in Settings.'
-            : 'The Outlook access token expired or was rejected. Save a fresh Graph Explorer token in Settings (or update GRAPH_ACCESS_TOKEN and restart if using environment configuration).';
-    let verifiedAccountPath: string | undefined;
-
-    async function verifyPersonalMailbox() {
-        if (config.authMode !== 'access_token' || verifiedAccountPath) return;
-        const response = await request('https://graph.microsoft.com/v1.0/me?$select=id,mail,userPrincipalName', {
-            headers: { Authorization: `Bearer ${config.accessToken}` },
-            signal: AbortSignal.timeout(30_000), redirect: 'error',
+    interface Call { method?: string; body?: unknown; prefer?: string[]; write?: boolean; uncertain?: boolean }
+    // One place for status handling. Sends are never retried: a timeout may follow acceptance.
+    async function call(url: string | URL, options: Call = {}): Promise<Response> {
+        const headers: Record<string, string> = {
+            Authorization: `Bearer ${await getToken()}`,
+            Prefer: ['IdType="ImmutableId"', ...(options.prefer ?? [])].join(', '),
+        };
+        if (options.body !== undefined) headers['Content-Type'] = 'application/json';
+        const response = await request(url, {
+            method: options.method ?? 'GET', headers, redirect: 'error', signal: AbortSignal.timeout(30_000),
+            ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
         });
-        if (response.status === 401) throw new GraphError(502, expiredTokenMessage);
-        if (response.status === 429) throw new GraphError(429, 'Microsoft is limiting requests. Wait before syncing again.');
-        if (!response.ok) throw new GraphError(502, 'Could not verify the Outlook account. The connection needs delegated User.Read permission.');
-        const profile = await response.json() as { id?: string; mail?: string; userPrincipalName?: string };
-        const addresses = [profile.mail, profile.userPrincipalName].filter(value => typeof value === 'string').map(value => value!.toLowerCase());
-        if (!profile.id || !addresses.includes(config.mailbox.toLowerCase())) {
-            throw new GraphError(502, 'The token belongs to a different mailbox. Set GRAPH_MAILBOX to the mail or userPrincipalName returned by /me in Graph Explorer.');
-        }
-        verifiedAccountPath = `/v1.0/users/${encodeURIComponent(profile.id)}/mailFolders/inbox/messages/delta`;
+        if (response.status === 401) throw new GraphError(502, 'Microsoft rejected the sign-in for this account. Reconnect it in Settings.', true);
+        if (response.status === 403) throw new GraphError(403, options.write
+            ? 'Microsoft denied this action. Reconnect the account in Settings and accept every requested permission.'
+            : 'Microsoft denied access to this mailbox. Reconnect the account in Settings.', options.write !== true);
+        if (response.status === 404) throw new GraphError(404, 'This message or attachment no longer exists in Outlook.');
+        if (response.status === 410) throw new GraphError(410, 'Mailbox sync expired. Sync again to rebuild the checkpoint.');
+        if (response.status === 429) throw new GraphError(429, 'Microsoft is limiting requests. Wait a moment and try again.');
+        if (response.status >= 500 && options.uncertain) throw new Error('Microsoft sending result is uncertain.');
+        return response;
     }
 
-    async function page(cursor?: string | null): Promise<MailPage> {
+    async function sync(cursor: string | null): Promise<SyncPage> {
         let url: URL;
-        try { url = new URL(cursor || initial.href); }
+        try { url = new URL(cursor || initialUrl()); }
         catch { throw new GraphError(502, 'Invalid Microsoft synchronization cursor.'); }
         // A stored continuation URL must never send our bearer token to another host.
-        if (url.origin !== initial.origin || url.username || url.password || url.hash) {
+        if (url.origin !== ORIGIN || url.username || url.password || url.hash || !DELTA_PATH.test(canonicalGraphPath(url.pathname))) {
             throw new GraphError(502, 'Invalid Microsoft synchronization cursor.');
         }
-        await verifyPersonalMailbox();
-        if (![path, verifiedAccountPath].some(allowed => allowed && canonicalGraphPath(url.pathname) === canonicalGraphPath(allowed))) {
-            throw new GraphError(502, 'Invalid Microsoft synchronization cursor.');
-        }
-        for (let attempt = 0; attempt < 2; attempt++) {
-            const response = await request(url, {
-                headers: { Authorization: `Bearer ${await accessToken()}`,
-                    Prefer: 'outlook.body-content-type="text", IdType="ImmutableId", odata.maxpagesize=50' },
-                signal: AbortSignal.timeout(30_000), redirect: 'error',
-            });
-            if (response.status === 401 && config.authMode === 'access_token') throw new GraphError(502, expiredTokenMessage);
-            if (response.status === 401 && attempt === 0) { token = undefined; continue; }
-            if (response.status === 410) throw new GraphError(410, 'Mailbox sync expired. Sync again to rebuild the checkpoint.');
-            if (response.status === 429) throw new GraphError(429, 'Microsoft is limiting requests. Wait before syncing again.');
-            if (!response.ok) throw new GraphError(502, `Microsoft mail request failed (${response.status}). Check mailbox access and Mail.Read permission.`);
-            const data = await response.json() as MailPage;
-            if (!Array.isArray(data.value) || !(data['@odata.nextLink'] || data['@odata.deltaLink'])) {
-                throw new GraphError(502, 'Invalid Microsoft mail response.');
-            }
-            return data;
-        }
-        throw new GraphError(502, 'Microsoft authentication failed.');
+        const response = await call(url, { prefer: ['outlook.body-content-type="text"', 'odata.maxpagesize=50'] });
+        if (!response.ok) throw new GraphError(502, `Microsoft mail request failed (${response.status}).`);
+        const data = await response.json() as GraphPage;
+        const next = data['@odata.nextLink'];
+        const checkpoint = next ?? data['@odata.deltaLink'];
+        if (!Array.isArray(data.value) || !checkpoint) throw new GraphError(502, 'Invalid Microsoft mail response.');
+        return { messages: data.value.map(toSyncedMessage), cursor: checkpoint, hasMore: Boolean(next) };
     }
-    const root = config.authMode === 'access_token' ? 'me' : `users/${encodeURIComponent(config.mailbox)}`;
-    async function post(path: string, body: unknown) {
-        await verifyPersonalMailbox();
-        // Never automatically retry a send: a timeout may happen after Microsoft accepted it.
-        const response = await request(`https://graph.microsoft.com/v1.0/${root}/${path}`, {
-            method: 'POST', redirect: 'error', signal: AbortSignal.timeout(30_000),
-            headers: { Authorization: `Bearer ${await accessToken()}`, 'Content-Type': 'application/json', Prefer: 'IdType="ImmutableId"' },
-            body: JSON.stringify(body),
-        });
-        if (response.status === 401) { token = undefined; throw new GraphError(502, expiredTokenMessage); }
-        if (response.status === 403) throw new GraphError(403, config.authMode !== 'access_token'
-            ? 'Microsoft denied sending. Check application Mail.Send consent and mailbox access scope.'
-            : config.tokenSource === 'oauth' ? 'Microsoft denied sending. Reconnect Outlook and consent to Mail.Send.'
-                : 'Microsoft denied sending. Consent to Mail.Send in Graph Explorer, then save the new token in Settings.');
-        if (response.status === 404) throw new GraphError(404, 'The original email no longer exists in Outlook.');
-        if (response.status === 429) throw new GraphError(429, 'Microsoft is limiting sending. Wait before trying again.');
-        if (response.status >= 500) throw new Error('Microsoft sending result is uncertain.');
+
+    const messageUrl = (id: string) => `${ROOT}/messages/${encodeURIComponent(id)}`;
+
+    async function send(id: string, action: 'reply' | 'forward', comment: string, recipients: string[]) {
+        const body = action === 'reply' ? { comment } : { comment, toRecipients: recipients.map(address => ({ emailAddress: { address } })) };
+        const response = await call(`${messageUrl(id)}/${action}`, { method: 'POST', body, write: true, uncertain: true });
         if (response.status !== 202) throw new GraphError(502, `Microsoft did not accept the message (${response.status}).`);
     }
-    async function send(id: string, action: 'reply' | 'forward', comment: string, recipients: string[]) {
-        await post(`messages/${encodeURIComponent(id)}/${action}`, action === 'reply' ? { comment } : { comment, toRecipients: recipients.map(address => ({ emailAddress: { address } })) });
-    }
+
     async function compose(message: NewMessage) {
         const addresses = (values: string[]) => values.map(address => ({ emailAddress: { address } }));
-        await post('sendMail', { message: { subject: message.subject, body: { contentType: 'Text', content: message.body },
-            toRecipients: addresses(message.to), ccRecipients: addresses(message.cc), bccRecipients: addresses(message.bcc) }, saveToSentItems: true });
+        const response = await call(`${ROOT}/sendMail`, { method: 'POST', write: true, uncertain: true, body: {
+            message: { subject: message.subject, body: { contentType: 'Text', content: message.body },
+                toRecipients: addresses(message.to), ccRecipients: addresses(message.cc), bccRecipients: addresses(message.bcc) },
+            saveToSentItems: true } });
+        if (response.status !== 202) throw new GraphError(502, `Microsoft did not accept the message (${response.status}).`);
     }
-    async function read(url: string, html = false) {
-        await verifyPersonalMailbox();
-        for (let attempt = 0; attempt < 2; attempt++) {
-            const response = await request(url, { headers: { Authorization: `Bearer ${await accessToken()}`, Prefer: `IdType="ImmutableId"${html ? ', outlook.body-content-type="html"' : ''}` },
-                redirect: 'error', signal: AbortSignal.timeout(30_000) });
-            if (response.status === 401 && config.authMode !== 'access_token' && attempt === 0) { token = undefined; continue; }
-            if (response.status === 401) throw new GraphError(502, expiredTokenMessage);
-            if (response.status === 404) throw new GraphError(404, 'This message or attachment no longer exists in Outlook.');
-            if (response.status === 429) throw new GraphError(429, 'Microsoft is limiting requests. Try again later.');
-            if (!response.ok) throw new GraphError(502, 'Microsoft download failed. Check Mail.Read permission.');
-            return response;
-        }
-        throw new GraphError(502, 'Microsoft authentication failed.');
+
+    async function setRead(id: string, isRead: boolean) {
+        const response = await call(messageUrl(id), { method: 'PATCH', body: { isRead }, write: true });
+        if (!response.ok) throw new GraphError(502, `Microsoft could not update the message (${response.status}).`);
     }
-    const messageUrl = (id: string) => `https://graph.microsoft.com/v1.0/${root}/messages/${encodeURIComponent(id)}`;
-    async function attachments(id: string) {
-        const base = `${messageUrl(id)}/attachments`;
-        let url: string | undefined = `${base}?$select=id,name,size,contentType&$top=100`;
+
+    async function attachments(id: string): Promise<MailAttachment[]> {
+        let url: string | undefined = `${messageUrl(id)}/attachments?$select=id,name,size,contentType&$top=100`;
         const result: MailAttachment[] = [];
         for (let pages = 0; url && pages < 10; pages++) {
             const target = new URL(url);
-            if (target.origin !== 'https://graph.microsoft.com' || canonicalGraphPath(target.pathname) !== canonicalGraphPath(new URL(base).pathname) || target.username || target.password || target.hash) throw new GraphError(502, 'Invalid attachment continuation.');
-            const data = await (await read(url)).json() as { value?: MailAttachment[]; '@odata.nextLink'?: string };
+            if (target.origin !== ORIGIN || target.username || target.password || target.hash || !ATTACHMENTS_PATH.test(canonicalGraphPath(target.pathname))) throw new GraphError(502, 'Invalid attachment continuation.');
+            const response = await call(url);
+            if (!response.ok) throw new GraphError(502, 'Microsoft attachment request failed.');
+            const data = await response.json() as { value?: Array<MailAttachment & { '@odata.type'?: string }>; '@odata.nextLink'?: string };
             if (!Array.isArray(data.value)) throw new GraphError(502, 'Invalid attachment response.');
             result.push(...data.value.map(item => ({ id: item.id, name: item.name, size: item.size, contentType: item.contentType,
-                ...(item['@odata.type'] ? { '@odata.type': item['@odata.type'] } : {}) })));
+                ...(item['@odata.type']?.endsWith('referenceAttachment') ? { cloudLink: true } : {}) })));
             url = data['@odata.nextLink'];
         }
         if (url) throw new GraphError(413, 'Too many attachments. Open this message in Outlook.');
         return result;
     }
+
     async function attachment(id: string, attachmentId: string) {
         const item = (await attachments(id)).find(value => value.id === attachmentId);
         if (!item) throw new GraphError(404, 'Attachment not found.');
-        if (item['@odata.type']?.endsWith('referenceAttachment')) throw new GraphError(400, 'Open cloud-link attachments in Outlook.');
-        const data = await readDownload(await read(`${messageUrl(id)}/attachments/${encodeURIComponent(attachmentId)}/$value`));
-        return { name: item.name, data };
+        if (item.cloudLink) throw new GraphError(400, 'Open cloud-link attachments in Outlook.');
+        const response = await call(`${messageUrl(id)}/attachments/${encodeURIComponent(attachmentId)}/$value`);
+        if (!response.ok) throw new GraphError(502, 'Microsoft download failed.');
+        return { name: item.name, data: await readDownload(response) };
     }
-    async function mime(id: string) { return readDownload(await read(`${messageUrl(id)}/$value`)); }
-    async function body(id: string) {
-        const bytes = await readDownload(await read(`${messageUrl(id)}?$select=body`, true), 5 * 1024 * 1024);
-        let data: MailMessage;
+
+    async function mime(id: string) {
+        const response = await call(`${messageUrl(id)}/$value`);
+        if (!response.ok) throw new GraphError(502, 'Microsoft download failed.');
+        return readDownload(response);
+    }
+
+    async function body(id: string): Promise<MailBody> {
+        const response = await call(`${messageUrl(id)}?$select=body`, { prefer: ['outlook.body-content-type="html"'] });
+        if (!response.ok) throw new GraphError(502, 'Microsoft message request failed.');
+        const bytes = await readDownload(response, 5 * 1024 * 1024);
+        let data: GraphMessage;
         try { data = JSON.parse(bytes.toString('utf8')); }
         catch { throw new GraphError(502, 'Invalid Microsoft message body.'); }
-        if (!data?.body || typeof data.body.content !== 'string' || !['html', 'text'].includes(data.body.contentType?.toLowerCase())) {
-            throw new GraphError(502, 'Invalid Microsoft message body.');
-        }
-        return data.body;
+        const type = data?.body?.contentType?.toLowerCase();
+        if (!data?.body || typeof data.body.content !== 'string' || (type !== 'html' && type !== 'text')) throw new GraphError(502, 'Invalid Microsoft message body.');
+        return { contentType: type, content: data.body.content };
     }
-    return { page, send, compose, attachments, attachment, mime, body };
+
+    return { sync, send, compose, setRead, attachments, attachment, mime, body };
 }

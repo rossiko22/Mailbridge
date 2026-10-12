@@ -2,6 +2,17 @@ import {Role, type User} from "./users.types.js";
 import {pool} from "../../config/database.js";
 import type {UUID} from "node:crypto";
 
+export async function updatePassword(userId: UUID, passwordHash: string): Promise<void> {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        await client.query('UPDATE users SET password_hash=$2 WHERE user_id=$1', [userId,passwordHash]);
+        await client.query("DELETE FROM sessions WHERE sess->>'userId'=$1", [userId]);
+        await client.query('COMMIT');
+    } catch (error) { await client.query('ROLLBACK'); throw error; }
+    finally { client.release(); }
+}
+
 export async function findByEmail(email: string): Promise<User | null>{
     const result = await pool.query<User>(
         `

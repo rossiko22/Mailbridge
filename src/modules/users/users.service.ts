@@ -2,6 +2,7 @@
 import {Role, type SafeUser, type User} from "./users.types.js";
 import type * as repository from "./users.repository.js";
 import {hashPassword, verifyHashPassword} from "../../security/password.js";
+import type { UUID } from 'node:crypto';
 
 
 type UserRepository = typeof repository;
@@ -48,7 +49,14 @@ export function createUserService(userRepository: UserRepository) {
 
         return toSafeUser(user);
     }
+    async function changePassword(userId: UUID, currentPassword: string, newPassword: string) {
+        const user = await userRepository.findById(userId);
+        if (!user?.isActive || !await verifyHashPassword(user.passwordHash, currentPassword)) return false;
+        await userRepository.updatePassword(userId, await hashPassword(newPassword));
+        return true;
+    }
     return {
+        changePassword,
         create,
         validateLogin,
     }

@@ -2,13 +2,26 @@
   "name": "okta-ticketing-system",
   "version": "1.0.0",
   "description": "This is a web application for managing incoming Outlook emails as tickets. The goal is to help a support team organize its mailbox, assign responsibility, and track and have complete log of done work.",
-  "main": "index.js",
+  "main": "dist/server.js",
   "scripts": {
-    "start backend": "tsx watch --include .env src/app.ts",
+    "start backend": "tsx watch --include .env src/server.ts",
     "generate-test-passwords": "tsx src/scripts/generate-password-hashes.ts",
     "migration": "tsx src/scripts/migrate.ts",
     "seed": "tsx src/scripts/seed-development.ts",
-    "test": "node --import tsx --test --test-isolation=none tests/*.test.ts"
+    "test": "node --import tsx --test --test-isolation=none tests/*.test.ts",
+    "dev": "tsx watch --include .env src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "typecheck": "tsc --noEmit",
+    "test:database": "node --import tsx tests/users.database.ts && node --import tsx tests/emails.database.ts && node --import tsx tests/workflow.database.ts && node --import tsx tests/http.database.ts",
+    "test:browser": "node --import tsx tests/browser-workflow.mjs",
+    "check": "npm run typecheck && npm test && npm run build",
+    "migration:prod": "node dist/scripts/migrate.js",
+    "admin:create": "node dist/scripts/bootstrap-admin.js",
+    "admin:reset-password": "node dist/scripts/reset-password.js",
+    "outlook:check": "node dist/scripts/check-outlook.js",
+    "test:setup": "node --import tsx tests/clean-setup.mjs",
+    "test:deployment": "docker build -t ticket-mail:test . && node tests/deployment.mjs"
   },
   "repository": {
     "type": "git",
@@ -29,16 +42,23 @@
     "@types/express-session": "^1.19.0",
     "@types/node": "^26.6.4",
     "@types/pg": "^8.23.1",
-    "node-pg-migrate": "^9.0.0",
+    "@types/sanitize-html": "^2.16.2",
+    "playwright": "^1.64.0",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   },
   "dependencies": {
+    "@azure/msal-node": "^7.0.1",
     "argon2": "^0.45.1",
     "connect-pg-simple": "^10.0.0",
     "dotenv": "^18.0.5",
     "express": "^5.2.1",
     "express-session": "^1.19.0",
-    "pg": "^8.23.1"
+    "node-pg-migrate": "^9.0.0",
+    "pg": "^8.23.1",
+    "sanitize-html": "^2.18.0"
+  },
+  "engines": {
+    "node": ">=24.0.0"
   }
 }

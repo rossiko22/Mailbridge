@@ -21,5 +21,9 @@ pool.on("error", (error) => {
 // Call and await this during startup, before app.listen().
 export async function checkDatabaseConnection(): Promise<void> {
     await pool.query("SELECT 1");
-    console.log("PostgreSQL connection successful");
+    for (const table of ['users','sessions','emails','mailbox_sync','email_activity','email_outgoing','outlook_connections','mailbox_outgoing','login_attempts','outlook_oauth','email_bodies']) {
+        const result = await pool.query('SELECT to_regclass($1) AS relation', [table]);
+        if (!result.rows[0].relation) throw new Error(`Missing database table ${table}. Run migrations before starting the server.`);
+    }
+    console.log("PostgreSQL connection and schema checks successful");
 }

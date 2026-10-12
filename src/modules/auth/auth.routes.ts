@@ -8,6 +8,7 @@ export function createAuthRouter(authController: AuthController, auth: ReturnTyp
     const router = Router();
 
     router.post("/login", authController.login);
+    router.post('/password', auth.requireAuth, authController.changePassword);
     router.get('/me', auth.requireAuth, (req, res) => {
         res.set('Cache-Control', 'no-store').json({ user: req.currentUser });
     });

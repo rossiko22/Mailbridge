@@ -30,7 +30,7 @@ export function createAuthController(userService: UserService) {
                 typeof email !== "string" ||
                 typeof password !== "string" ||
                 email.trim() === "" ||
-                password === ""
+                email.length > 254 || password.length > 1024 || password === ""
             ){
                 res.status(400).json({
                     message: "Invalid email or password."
@@ -79,5 +79,18 @@ export function createAuthController(userService: UserService) {
             next(error);
         }
     }
-    return { login };
+    async function changePassword(req: Request, res: Response, next: NextFunction) {
+        try {
+            const { currentPassword, newPassword } = req.body ?? {};
+            if (typeof currentPassword !== 'string' || currentPassword.length > 1024 || typeof newPassword !== 'string' || newPassword.length < 12 || newPassword.length > 1024) {
+                res.status(400).json({ message: 'Provide your current password and a new password of 12–1024 characters.' }); return;
+            }
+            if (!await userService.changePassword(req.currentUser!.userId, currentPassword, newPassword)) {
+                res.status(400).json({ message: 'Current password is incorrect.' }); return;
+            }
+            await new Promise<void>((resolve, reject) => req.session.destroy(error => error ? reject(error) : resolve()));
+            res.clearCookie('session', { path: '/' }).json({ changed: true });
+        } catch (error) { next(error); }
+    }
+    return { login, changePassword };
 }

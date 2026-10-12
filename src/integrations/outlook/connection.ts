@@ -1,6 +1,14 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 import type { Pool } from 'pg';
-import { createGraphClient, GraphError, type GraphConfig } from './graph.js';
+import { createGraphClient, GraphError, type OutlookConfig, type NewMessage } from './graph.js';
+import { createOAuthConnection, type OAuthState } from './oauth.js';
+
+export interface OutlookConnection extends ReturnType<typeof createGraphClient> {
+    status(): Promise<{ mailbox: string; mode: string; source: string; updatedAt: unknown }>;
+    saveToken(token: string): Promise<void>;
+    beginOAuth?: () => Promise<{ url: string; pending: OAuthState }>;
+    completeOAuth?: (code: string, pending: OAuthState) => Promise<void>;
+}
 
 export function tokenVault(secret: string, mailbox: string) {
     const key = createHash('sha256').update(`outlook-token-v1:${secret}`).digest();
@@ -23,7 +31,8 @@ export function tokenVault(secret: string, mailbox: string) {
     };
 }
 
-export function createOutlookConnection(pool: Pool, config: GraphConfig, secret: string, makeClient = createGraphClient) {
+export function createOutlookConnection(pool: Pool, config: OutlookConfig, secret: string, makeClient = createGraphClient): OutlookConnection {
+    if (config.authMode === 'oauth') return createOAuthConnection(pool, config, secret);
     const vault = tokenVault(secret, config.mailbox);
     let cachedToken: string | undefined;
     let cachedClient = makeClient(config);
@@ -50,5 +59,10 @@ export function createOutlookConnection(pool: Pool, config: GraphConfig, secret:
         return { mailbox: config.mailbox, mode: config.authMode ?? 'application', source: rows[0] ? 'settings' : 'environment', updatedAt: rows[0]?.updated_at ?? null };
     }
     return { page: async (cursor?: string | null) => (await client()).page(cursor),
+        compose: async (message: NewMessage) => (await client()).compose(message),
+        attachments: async (id: string) => (await client()).attachments(id),
+        attachment: async (id: string, attachmentId: string) => (await client()).attachment(id, attachmentId),
+        mime: async (id: string) => (await client()).mime(id),
+        body: async (id: string) => (await client()).body(id),
         send: async (id: string, action: 'reply' | 'forward', comment: string, recipients: string[]) => (await client()).send(id, action, comment, recipients), saveToken, status };
 }

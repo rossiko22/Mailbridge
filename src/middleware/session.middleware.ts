@@ -22,7 +22,7 @@ export const sessionMiddleware = session({
         httpOnly: true,
         secure: env.NODE_ENV === "production",
         sameSite: "lax",
-        maxAge: 10000 * 60 * 60,
+        maxAge: 8 * 60 * 60 * 1000,
         path: "/"
     },
 });

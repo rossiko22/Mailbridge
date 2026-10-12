@@ -6,6 +6,16 @@
     if (!response.ok) throw new Error(data.message || 'The request failed. Please try again.');
     return data;
   }
+  async function download(path, fallbackName) {
+    const response = await fetch(path, { cache: 'no-store' });
+    if (!response.ok) {
+      if (response.status === 401) location.assign('index.html');
+      const data = await response.json(); throw new Error(data.message || 'Download failed.');
+    }
+    const url = URL.createObjectURL(await response.blob());
+    const link = document.createElement('a'); link.href = url; link.download = fallbackName;
+    document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
   const json = (method, body) => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const ready = api('/auth/me').then(({ user }) => {
     document.querySelectorAll('[data-current-user]').forEach(el => { el.textContent = user.email; });
@@ -40,9 +50,11 @@
     catch (error) { notify(error.message); document.querySelector('[data-action="logout"]').disabled = false; }
   });
   ready.catch(error => notify(error.message));
-  window.mailApp = { api, json, ready, notify, setMeta(meta) {
+  window.mailApp = { api, json, ready, notify, download, setMeta(meta) {
     document.querySelectorAll('[data-count]').forEach(el => { el.textContent = meta.counts[el.dataset.count] ?? 0; });
-    if (syncButton) { syncButton.hidden = !meta.canManage; }
-    if (!meta.canManage) notify('Showing mail assigned to you');
+    if (syncButton) { syncButton.hidden = !meta.canManage || !meta.outlookConfigured; }
+    document.querySelector('[href="compose.html"]')?.toggleAttribute('hidden', !meta.canManage);
+    if (!meta.outlookConfigured) notify('Local mode · Outlook is not connected');
+    else if (!meta.canManage) notify('Showing mail assigned to you');
   } };
 })();

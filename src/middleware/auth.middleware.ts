@@ -52,7 +52,7 @@ export function createAuthMiddleware(userRepository: UserRepository) {
             }
 
             if(req.currentUser.role !== allowedRole) {
-                res.status(401).json({
+                res.status(403).json({
                     message: "You do not have permission to use this action",
                 });
                 return;

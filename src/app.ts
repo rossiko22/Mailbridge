@@ -16,9 +16,15 @@ import { env } from './config/env.js';
 import { createEmailRepository } from './modules/emails/emails.repository.js';
 import { createEmailService } from './modules/emails/emails.service.js';
 import { createEmailRouter } from './modules/emails/emails.routes.js';
+import { requireSameSiteJson } from './middleware/json.middleware.js';
+import { loginThrottle, securityHeaders } from './middleware/security.middleware.js';
 
-const app = express();
+export const app = express();
 
+app.disable('x-powered-by');
+if (process.env.TRUST_PROXY === '1') app.set('trust proxy', 1);
+app.use(securityHeaders);
+app.use(requireSameSiteJson);
 app.use(express.json({ limit: '64kb' }));
 app.use(sessionMiddleware);
 
@@ -28,6 +34,7 @@ const authMiddleware = createAuthMiddleware(userRepository);
 const authController = createAuthController(userService);
 const userController = createUserController(userService);
 
+app.post('/auth/login', loginThrottle(pool, env.SESSION_SECRET));
 app.use("/auth", createAuthRouter(authController, authMiddleware));
 
 app.use(
@@ -36,11 +43,15 @@ app.use(
 )
 
 const outlook = graphConfig();
-const connection = outlook ? createOutlookConnection(pool, outlook, env.SESSION_SECRET) : undefined;
-const emailService = outlook
-    ? createEmailService(pool, createEmailRepository(pool), connection!, outlook.mailbox)
-    : undefined;
-app.use('/emails', createEmailRouter(authMiddleware, emailService, outlook?.authMode === 'access_token' ? outlook.ownerEmail : undefined, connection));
+const connection = outlook ? createOutlookConnection(pool, outlook, env.TOKEN_ENCRYPTION_KEY) : undefined;
+const emailService = createEmailService(pool, createEmailRepository(pool), connection, outlook?.mailbox ?? env.LOCAL_MAILBOX);
+const owner = outlook && 'ownerEmail' in outlook ? outlook.ownerEmail : outlook ? process.env.GRAPH_OWNER_EMAIL : env.LOCAL_OWNER_EMAIL;
+app.use('/emails', createEmailRouter(authMiddleware, emailService, owner, connection));
+
+app.get('/health', async (_req, res) => {
+    await pool.query('SELECT 1');
+    res.json({ status: 'ok' });
+});
 
 app.use(errorMiddleware);
 
@@ -53,7 +64,3 @@ app.use(express.static(publicDirectory, {
         if (path.endsWith('.html') || path.endsWith('.js')) res.setHeader('Cache-Control', 'no-store');
     },
 }));
-
-app.listen(3000, () => {
-    console.log("Server running on port 3000");
-})

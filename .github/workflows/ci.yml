@@ -1,0 +1,43 @@
+name: Verify application
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: ticket_mail_test
+          POSTGRES_USER: ticket_mail_test
+          POSTGRES_PASSWORD: ci-only-password
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U ticket_mail_test -d ticket_mail_test"
+          --health-interval 10s --health-timeout 5s --health-retries 10
+    env:
+      NODE_ENV: test
+      SESSION_SECRET: ci-only-random-test-secret-not-for-production
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ticket_mail_test
+      POSTGRES_USER: ticket_mail_test
+      POSTGRES_PASSWORD: ci-only-password
+      GRAPH_AUTH_MODE: disabled
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run migration
+      - run: npm run migration
+      - run: npm run test:database
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm run test:setup
+      - run: npm run test:deployment

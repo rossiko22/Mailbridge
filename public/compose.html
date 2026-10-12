@@ -1,82 +1,19 @@
 <!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="color-scheme" content="light">
-    <title>New message · Company Mail Portal</title>
-    <link rel="icon" href="assets/images/company-mail-logo.png">
-    <link rel="stylesheet" href="css/base.css">
-    <link rel="stylesheet" href="css/app.css">
-    <link rel="stylesheet" href="css/composer.css">
-    <script src="js/components/app-sidebar.js" defer></script>
-    <script src="js/components/app-navbar.js" defer></script>
-    <script src="js/components/ticket-card.js" defer></script>
-  </head>
-  <body data-page="compose">
-    <a class="skip-link" href="#main-content">Skip to main content</a>
-    <div class="app-shell">
-      <app-sidebar active="compose"></app-sidebar>
-      <main class="workspace compose-workspace" id="main-content">
-        <header class="workspace-heading">
-          <h1>New Ticket / Compose</h1><span class="mono muted">From: support@company.internal</span>
-          <app-navbar></app-navbar>
-        </header>
-        <div class="compose-page">
-          <div class="compose-intro">
-            <p class="eyebrow">Shared support mailbox</p><h2>Start a new conversation</h2><p class="muted">Send an email from your team’s connected Outlook mailbox.</p>
-          </div>
-          <section class="composer" id="reply-composer" aria-labelledby="composer-title">
-            <form id="compose-form" data-form="compose">
-              <header class="composer-header">
-                <div class="row">
-                  <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m14 4 6 6M4 20l5-1L21 7a2 2 0 0 0-4-4L5 15l-1 5ZM12 4H4v18h16v-9"/></svg><h2 id="composer-title">New message</h2>
-                </div>
-                <span class="mono muted" data-draft-status>Draft</span>
-              </header>
-              <div class="composer-addresses">
-                <div class="address-field">
-                  <label for="reply-to">To</label><input id="reply-to" name="to" type="email" multiple required value="" placeholder="recipient@company.internal">
-                </div>
-                <div class="address-field">
-                  <label for="reply-cc">Cc</label><input id="reply-cc" name="cc" type="email" multiple value="" placeholder="Add recipients">
-                </div>
-                <details class="bcc-field">
-                  <summary>Add Bcc</summary>
-                  <div class="address-field">
-                    <label for="reply-bcc">Bcc</label><input id="reply-bcc" name="bcc" type="email" multiple placeholder="Add hidden recipients">
-                  </div>
-                </details>
-                <div class="address-field">
-                  <label for="reply-subject">Subject</label><input id="reply-subject" name="subject" type="text" required value="" placeholder="Message subject">
-                </div>
-              </div>
-              <div class="formatting-toolbar" role="group" aria-label="Message formatting">
-                <button type="button" class="icon-button" aria-label="Bold" title="Bold" data-action="format-bold" ><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h7a4.5 4.5 0 0 1 0 9H6Zm0 9h8a4.5 4.5 0 0 1 0 9H6Z"/></svg></button>
-                <button type="button" class="icon-button" aria-label="Italic" title="Italic" data-action="format-italic" ><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 3h9M5 21h9M15 3 9 21"/></svg></button>
-                <button type="button" class="icon-button" aria-label="Insert link" title="Insert link" data-action="format-link" ><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m10 13 4-4M8 16l-2 2a3 3 0 0 1-4-4l6-6a3 3 0 0 1 4 0m0 8a3 3 0 0 0 4 0l6-6a3 3 0 0 0-4-4l-2 2"/></svg></button>
-                <button type="button" class="icon-button" aria-label="Code block" title="Code block" data-action="format-code" ><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 6-6 6 6 6m10-12 6 6-6 6M14 3l-4 18"/></svg></button>
-                <button type="button" class="icon-button" aria-label="Bulleted list" title="Bulleted list" data-action="format-list" ><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.1M3 12h.1M3 18h.1"/></svg></button><span class="toolbar-spacer"></span><button type="button" class="button button--ghost button--small" data-action="insert-template" ><span>Insert canned response</span></button>
-              </div>
-              <label class="sr-only" for="reply-body">Message body</label><textarea id="reply-body" name="body" class="composer-body" rows="9" required placeholder="Write your message…"></textarea>
-              <div class="composer-attachments">
-                <label for="reply-attachments" class="field-label"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 13 7-7a3 3 0 0 1 4 4L9 20a5 5 0 0 1-7-7L13 2m-7 12 8-8"/></svg> Add attachments</label><input id="reply-attachments" name="attachments" type="file" multiple>
-                <div id="draft-attachment-list" data-attachment-list>
-                </div>
-              </div>
-              <div id="reply-error" class="notice notice--error" role="alert" hidden>
-                Could not send your message. Your draft has been preserved. Please try again.
-              </div>
-              <footer class="composer-footer">
-                <div class="row wrap">
-                  <button type="button" class="button button--primary" data-action="send-message" id="send-reply-button"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4L22 2ZM11 13 22 2"/></svg><span>Send message</span></button> <a class="button button--secondary" href="app.html"><span>Cancel</span></a><span class="mono muted" id="send-status" role="status"></span>
-                </div>
-                <p class="composer-note"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v.1"/></svg>Sending a reply and marking a task as finished are independent actions.</p>
-              </footer>
-            </form>
-          </section>
-        </div>
-      </main>
-    </div>
-  </body>
-</html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>New message · Ticket Mail</title><link rel="icon" href="assets/images/company-mail-logo.png">
+<script src="js/theme.js"></script><link rel="stylesheet" href="css/base.css"><link rel="stylesheet" href="css/app.css"><link rel="stylesheet" href="css/settings.css"><link rel="stylesheet" href="css/mailbox.css">
+<script src="js/components/app-sidebar.js" defer></script><script src="js/components/app-navbar.js" defer></script><script src="js/app-client.js" defer></script><script src="js/compose.js" defer></script>
+</head><body data-page="compose"><a class="skip-link" href="#main-content">Skip to main content</a><div class="app-shell"><app-sidebar active="compose"></app-sidebar>
+<main class="workspace settings-workspace" id="main-content"><div class="settings-page"><header class="settings-heading"><h1>New message</h1><app-navbar></app-navbar></header>
+<section class="panel"><p id="compose-status" role="status">Loading…</p>
+<form id="compose-form" class="mail-compose" hidden>
+<p>Start a conversation from the connected mailbox. Use commas between addresses; at most 20 recipients in total. Messages are sent as plain text.</p>
+<label>To<input class="input" name="to" type="email" multiple required autocomplete="off"></label>
+<label>Cc<input class="input" name="cc" type="email" multiple autocomplete="off"></label>
+<label>Bcc<input class="input" name="bcc" type="email" multiple autocomplete="off"></label>
+<label>Subject<input class="input" name="subject" maxlength="250" required></label>
+<label>Message<textarea class="input" name="body" rows="10" maxlength="20000" required></textarea></label>
+<div class="row"><button class="button button--primary" type="submit">Send message</button><a class="button" href="app.html">Back to mailbox</a></div>
+</form></section>
+<section class="panel"><h2>Your recent new messages</h2><p>Up to 50 requests. “Accepted” means Outlook accepted the request; delivery is not confirmed. For pending or unknown results, check Sent Items before sending again.</p><ul id="compose-history" class="mail-history"></ul></section>
+</div></main></div></body></html>

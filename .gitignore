@@ -4,9 +4,15 @@
 *.bkp
 *.idea
 .env
+.env.production
+.env.test
+coverage/
+test-results/
+playwright-report/
+*.log
+backups/
 figma-design
 dist
 
 
 node_modules
-/public/README.md

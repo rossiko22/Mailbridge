@@ -140,3 +140,28 @@ test('uncertain send responses are not automatically retried', async () => {
     await assert.rejects(graph.send('mail','reply','hello',[]), /uncertain/);
     assert.equal(sends,1);
 });
+
+for (const account of ['me',"users('account-id')"]){
+ test(`real Outlook OData continuation is accepted unchanged for verified account: ${account}`,async()=>{
+  const actual=`https://graph.microsoft.com/v1.0/${account}/mailFolders('inbox')/messages/delta?$skiptoken=opaque%2Btoken%2Fvalue`;
+  const urls:string[]=[];
+  const graph=createGraphClient(personal,async url=>{urls.push(String(url));return String(url).includes('/me?')?json(profile):json({value:[],'@odata.deltaLink':actual});});
+  await graph.page(actual);assert.equal(urls.at(-1),actual);
+ });
+}
+test('application OData key-predicate continuation accepts only the configured mailbox',async()=>{
+ const actual="https://graph.microsoft.com/v1.0/users('support%40example.com')/mailFolders('inbox')/messages/delta?$deltatoken=opaque";
+ const graph=createGraphClient(config,async url=>String(url).includes('/token')?json({access_token:'token',expires_in:3600}):json({value:[],'@odata.deltaLink':actual}));
+ await graph.page(actual);
+ await assert.rejects(graph.page(actual.replace('support%40','other%40')),/Invalid Microsoft synchronization cursor/);
+});
+test('OData normalization does not permit other folders, accounts, hosts or malformed escapes',async()=>{
+ const graph=createGraphClient(personal,async url=>{if(String(url).includes('/me?'))return json(profile);throw new Error('must not request an invalid cursor');});
+ for(const value of [
+  "https://graph.microsoft.com/v1.0/me/mailFolders('sentitems')/messages/delta?$skiptoken=x",
+  "https://graph.microsoft.com/v1.0/users('other-account')/mailFolders('inbox')/messages/delta?$skiptoken=x",
+  "https://attacker.invalid/v1.0/me/mailFolders('inbox')/messages/delta?$skiptoken=x",
+  "https://graph.microsoft.com/v1.0/me/mailFolders('%zz')/messages/delta?$skiptoken=x",
+  'not a URL',
+ ])await assert.rejects(graph.page(value),/Invalid Microsoft synchronization cursor/);
+});

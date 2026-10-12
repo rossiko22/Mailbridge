@@ -1,7 +1,7 @@
 import type { Pool, PoolClient } from 'pg';
 import { GraphError } from '../../integrations/outlook/graph.js';
 import { defaultFilters, type MailFilters, type MailAccess } from './emails.types.js';
-import type { MailMessage } from '../../integrations/outlook/graph.js';
+import type { MailMessage, NewMessage } from '../../integrations/outlook/graph.js';
 
 export function createEmailRepository(pool: Pool) {
     async function save(client: PoolClient, mailbox: string, message: MailMessage) {
@@ -12,12 +12,17 @@ export function createEmailRepository(pool: Pool) {
             (mailbox, graph_id, subject, sender_name, sender_address, preview, body_text, received_at, has_attachments, is_read)
             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
             ON CONFLICT (mailbox, graph_id) DO UPDATE SET
-            subject=EXCLUDED.subject, sender_name=EXCLUDED.sender_name, sender_address=EXCLUDED.sender_address,
-            preview=EXCLUDED.preview, body_text=EXCLUDED.body_text, received_at=EXCLUDED.received_at,
-            has_attachments=EXCLUDED.has_attachments, is_read=EXCLUDED.is_read`,
+            subject=CASE WHEN $11::jsonb ? 'subject' THEN EXCLUDED.subject ELSE emails.subject END,
+            sender_name=CASE WHEN $11::jsonb ? 'from' THEN EXCLUDED.sender_name ELSE emails.sender_name END,
+            sender_address=CASE WHEN $11::jsonb ? 'from' THEN EXCLUDED.sender_address ELSE emails.sender_address END,
+            preview=CASE WHEN $11::jsonb ? 'bodyPreview' THEN EXCLUDED.preview ELSE emails.preview END,
+            body_text=CASE WHEN $11::jsonb ? 'body' THEN EXCLUDED.body_text ELSE emails.body_text END,
+            received_at=CASE WHEN $11::jsonb ? 'receivedDateTime' THEN EXCLUDED.received_at ELSE emails.received_at END,
+            has_attachments=CASE WHEN $11::jsonb ? 'hasAttachments' THEN EXCLUDED.has_attachments ELSE emails.has_attachments END,
+            is_read=CASE WHEN $11::jsonb ? 'isRead' THEN EXCLUDED.is_read ELSE emails.is_read END`,
             [mailbox, message.id, message.subject ?? '', message.from?.emailAddress?.name ?? '',
                 message.from?.emailAddress?.address ?? '', message.bodyPreview ?? '', message.body?.content ?? '',
-                message.receivedDateTime ?? null, message.hasAttachments ?? false, message.isRead ?? false]);
+                message.receivedDateTime ?? null, message.hasAttachments ?? false, message.isRead ?? false, JSON.stringify(message)]);
     }
     const columns = `e.email_id AS id, e.subject, e.sender_name AS "senderName", e.sender_address AS "senderAddress",
         e.preview, e.received_at AS "receivedAt", e.has_attachments AS "hasAttachments", e.status, e.version,
@@ -103,5 +108,23 @@ export function createEmailRepository(pool: Pool) {
     async function sendState(requestId: string, state: string) {
         await pool.query('UPDATE email_outgoing SET state=$2 WHERE request_id=$1', [requestId, state]);
     }
-    return { save, list, get, metadata, transition, reserveSend, sendState };
+    async function reserveCompose(mailbox: string, access: MailAccess, requestId: string, message: NewMessage) {
+        const result = await pool.query(`INSERT INTO mailbox_outgoing(request_id,mailbox,actor_id,message,state)
+            VALUES ($1,$2,$3,$4,'pending') ON CONFLICT DO NOTHING RETURNING request_id`, [requestId,mailbox,access.userId,JSON.stringify(message)]);
+        if (result.rowCount) return true;
+        const { rows } = await pool.query(`SELECT state FROM mailbox_outgoing WHERE request_id=$1 AND mailbox=$2 AND actor_id=$3 AND message=$4::jsonb`,
+            [requestId,mailbox,access.userId,JSON.stringify(message)]);
+        if (rows[0]?.state === 'accepted') return false;
+        throw new GraphError(409, 'This send request was already submitted. Check Outlook Sent Items before sending again.');
+    }
+    async function composeState(requestId: string, state: string) {
+        await pool.query('UPDATE mailbox_outgoing SET state=$2 WHERE request_id=$1', [requestId,state]);
+    }
+    async function outgoing(mailbox: string, access: MailAccess) {
+        // Bcc and message bodies are visible only to their author.
+        const result = await pool.query(`SELECT request_id AS "requestId",message,state,created_at AS "createdAt"
+            FROM mailbox_outgoing WHERE mailbox=$1 AND actor_id=$2 ORDER BY created_at DESC LIMIT 50`, [mailbox,access.userId]);
+        return result.rows;
+    }
+    return { save, list, get, metadata, transition, reserveSend, sendState, reserveCompose, composeState, outgoing };
 }

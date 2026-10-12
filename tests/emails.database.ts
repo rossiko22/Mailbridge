@@ -11,6 +11,7 @@ try {
     const repository = createEmailRepository(pool);
     await repository.save(client, mailbox, { id: 'same-message', subject: 'first', body: { contentType: 'text', content: 'body' } });
     await repository.save(client, mailbox, { id: 'same-message', subject: 'updated', body: { contentType: 'text', content: 'updated body' } });
+    await repository.save(client, mailbox, { id: 'same-message', isRead: true });
     await repository.save(client, mailbox, { id: 'same-message', '@removed': { reason: 'deleted' } });
     const result = await client.query('SELECT subject, body_text FROM emails WHERE mailbox=$1', [mailbox]);
     assert.deepEqual(result.rows, [{ subject: 'updated', body_text: 'updated body' }]);

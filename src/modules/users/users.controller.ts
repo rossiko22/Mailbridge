@@ -34,11 +34,11 @@ export function createUserController(userService: UserService) {
                 typeof password !== "string" ||
                 typeof avatarPath !== "string" ||
                 email.trim() === "" ||
-                password === "" ||
+                password.length < 12 || password.length > 1024 || email.length > 254 ||
                 avatarPath === ""
             ) {
                 res.status(400).json({
-                    message: "Email, password and avatarPath must not be empty.",
+                    message: "Provide an email (up to 254 characters), a password (12–1024 characters) and an avatar path.",
                 })
                 return;
             }

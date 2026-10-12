@@ -1,5 +1,4 @@
 -- Up Migration
-BEGIN;
 
 CREATE TABLE users (
                        user_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -39,5 +38,3 @@ CREATE TRIGGER users_updated_at
     BEFORE UPDATE ON users
     FOR EACH ROW
     EXECUTE FUNCTION set_users_updated_at();
-
-COMMIT;

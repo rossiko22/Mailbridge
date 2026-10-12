@@ -5,6 +5,7 @@ import type { createEmailService } from './emails.service.js';
 import type { createOutlookConnection } from '../../integrations/outlook/connection.js';
 import { GraphError } from '../../integrations/outlook/graph.js';
 import type { MailAccess, MailFilters } from './emails.types.js';
+import { emailCsp, renderEmail } from './presentation.js';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function createEmailRouter(auth: ReturnType<typeof createAuthMiddleware>, service?: ReturnType<typeof createEmailService>, ownerEmail?: string, connection?: ReturnType<typeof createOutlookConnection>) {
@@ -32,6 +33,26 @@ export function createEmailRouter(auth: ReturnType<typeof createAuthMiddleware>,
         if (!connection) throw new GraphError(503, 'Outlook settings unavailable.');
         res.json(await connection.status());
     });
+    router.get('/connection/authorize', async (req, res) => {
+        manager(req);
+        if (!connection?.beginOAuth) throw new GraphError(400, 'Microsoft sign-in requires GRAPH_AUTH_MODE=oauth.');
+        const result = await connection.beginOAuth();
+        req.session.outlookOAuth = result.pending;
+        await new Promise<void>((resolve, reject) => req.session.save(error => error ? reject(error) : resolve()));
+        res.redirect(result.url);
+    });
+    router.get('/connection/callback', async (req, res) => {
+        manager(req);
+        const pending = req.session.outlookOAuth;
+        delete req.session.outlookOAuth;
+        await new Promise<void>((resolve, reject) => req.session.save(error => error ? reject(error) : resolve()));
+        if (!pending || pending.expiresAt < Date.now() || typeof req.query.state !== 'string' || req.query.state !== pending.state) {
+            res.redirect('/settings.html?outlook=invalid-state'); return;
+        }
+        if (typeof req.query.code !== 'string' || !connection?.completeOAuth) { res.redirect('/settings.html?outlook=denied'); return; }
+        try { await connection.completeOAuth(req.query.code, pending); res.redirect('/settings.html?outlook=connected'); }
+        catch { res.redirect('/settings.html?outlook=failed'); }
+    });
     router.put('/connection/token', async (req, res) => {
         manager(req);
         if (!connection) throw new GraphError(503, 'Outlook settings unavailable.');
@@ -54,7 +75,38 @@ export function createEmailRouter(auth: ReturnType<typeof createAuthMiddleware>,
         res.json(await service!.list(offset, filters, access(req)));
     });
     router.post('/sync', async (req, res) => { manager(req); res.json(await service!.sync()); });
+    router.get('/outgoing', async (req, res) => { res.json({ messages: await service!.outgoing(access(req)) }); });
+    router.post('/compose', async (req, res) => {
+        manager(req);
+        const { requestId, subject, body, to, cc = [], bcc = [] } = req.body ?? {};
+        const validAddresses = (value: unknown): value is string[] => Array.isArray(value) && value.every(item =>
+            typeof item === 'string' && item.length <= 254 && /^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/.test(item));
+        if (typeof requestId !== 'string' || !uuid.test(requestId) || typeof subject !== 'string' || !subject.trim() || subject.length > 250 || /[\r\n]/.test(subject) ||
+            typeof body !== 'string' || !body.trim() || body.length > 20000 || !validAddresses(to) || !to.length ||
+            !validAddresses(cc) || !validAddresses(bcc) || to.length + cc.length + bcc.length > 20) throw new GraphError(400, 'Enter a subject, message and valid recipient addresses (maximum 20).');
+        res.status(202).json(await service!.compose(access(req), requestId, { subject, body, to, cc, bcc }));
+    });
     router.param('id', (_req, _res, next, id) => { next(uuid.test(id) ? undefined : new GraphError(400, 'Invalid email ID.')); });
+    router.get('/:id/body', async (req, res) => {
+        if (req.query.images !== undefined && req.query.images !== 'true') throw new GraphError(400, 'images must be true or omitted.');
+        const body = await service!.body(String(req.params.id), access(req));
+        const images = req.query.images === 'true';
+        res.set({ 'Content-Security-Policy': emailCsp(images), 'X-Frame-Options': 'SAMEORIGIN' })
+            .type('html').send(renderEmail(body, images));
+    });
+    router.get('/:id/export', async (req, res) => {
+        if (req.query.original !== undefined && req.query.original !== 'true') throw new GraphError(400, 'original must be true or omitted.');
+        const data = await service!.exportEmail(String(req.params.id), access(req), req.query.original === 'true');
+        res.attachment(`ticket-${req.params.id}${req.query.original ? '-original' : '-text'}.eml`).type('message/rfc822').send(data);
+    });
+    router.get('/:id/attachments', async (req, res) => { res.json({ attachments: await service!.attachments(String(req.params.id), access(req)) }); });
+    router.get('/:id/attachments/:attachmentId', async (req, res) => {
+        const attachmentId = String(req.params.attachmentId);
+        if (attachmentId.length > 2048 || /[\r\n\x00]/.test(attachmentId)) throw new GraphError(400, 'Invalid attachment ID.');
+        const result = await service!.attachment(String(req.params.id), attachmentId, access(req));
+        const filename = result.name.replace(/[\x00-\x1f\x7f/\\]/g, '_').slice(0, 200) || 'attachment';
+        res.set('X-Content-Type-Options', 'nosniff').attachment(filename).type('application/octet-stream').send(result.data);
+    });
     router.get('/:id', async (req, res) => {
         const email = await service!.get(String(req.params.id), access(req));
         if (!email) throw new GraphError(404, 'Email not found.');

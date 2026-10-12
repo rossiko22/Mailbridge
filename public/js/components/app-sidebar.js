@@ -4,6 +4,7 @@
   template.innerHTML = `<aside class="sidebar" aria-label="Application navigation">
         <a class="sidebar-brand" href="app.html" aria-label="Ticket Mail home"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 6 9 7 9-7"/></svg><span>Ticket Mail</span><small class="version mono">v1.0</small></a>
         <nav class="sidebar-nav" aria-label="Mailbox">
+          <a class="nav-link" href="compose.html" aria-label="New message"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span class="nav-label">New message</span></a>
           <a class="nav-link" href="app.html" aria-label="All mail"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16l2 12v4H2v-4L4 4Z"/><path d="M2 15h6l2 3h4l2-3h6"/></svg><span class="nav-label">All mail</span><span class="count" data-count="all">0</span></a>
           <a class="nav-link" href="unassigned.html" aria-label="Unassigned"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 2h6v4H9zM9 11h6m-6 4h3"/></svg><span class="nav-label">Unassigned</span><span class="count" data-count="unassigned">0</span></a>
           <a class="nav-link" href="assigned.html" aria-label="Assigned"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="7" r="3"/><path d="M2 20v-3a7 7 0 0 1 14 0v3ZM16 4a3 3 0 0 1 0 6m3 4a6 6 0 0 1 3 6"/></svg><span class="nav-label">Assigned</span><span class="count" data-count="assigned">0</span></a>
@@ -25,7 +26,7 @@
           </div>
         </div>
       </aside>`;
-  const pages = { all: 'app.html', unassigned: 'unassigned.html', assigned: 'assigned.html', mine: 'assigned-to-me.html', finished: 'finished.html', settings: 'settings.html' };
+  const pages = { compose: 'compose.html', all: 'app.html', unassigned: 'unassigned.html', assigned: 'assigned.html', mine: 'assigned-to-me.html', finished: 'finished.html', settings: 'settings.html' };
 
   class AppSidebar extends HTMLElement {
     static observedAttributes = ['active', 'version', 'mine-icon'];

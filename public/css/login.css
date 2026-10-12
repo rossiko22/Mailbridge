@@ -73,3 +73,14 @@ button:focus-visible { outline: 3px solid #2563eb; outline-offset: 3px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+:root[data-theme="dark"] body { color: var(--text) !important; background: var(--canvas) !important; }
+:root[data-theme="dark"] .login-card { color: var(--text); background: var(--surface); box-shadow: 0 16px 42px #0008; }
+:root[data-theme="dark"] h1,
+:root[data-theme="dark"] .card-header h1,
+:root[data-theme="dark"] label { color: var(--text); }
+:root[data-theme="dark"] .card-header > p,
+:root[data-theme="dark"] .page-footer { color: var(--muted); }
+:root[data-theme="dark"] input { color: var(--text); background: var(--surface-low); border-color: var(--border); }
+:root[data-theme="dark"] .ribbon { color: #d5e2f7; background: var(--surface-mid); }
+:root[data-theme="dark"] .page-footer a { color: #b8ceff; }

@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { MailError } from '../mail/errors.js';
 import type { ConnectedProfile, CredentialStore, MailClient, MailProvider, PendingAuth } from '../mail/types.js';
-import { createGmailClient } from './api.js';
+import { createGmailClient, createQuotaBudget, type QuotaBudget } from './api.js';
 
 export const gmailScopes = ['openid', 'email', 'profile', 'https://www.googleapis.com/auth/gmail.modify', 'https://www.googleapis.com/auth/gmail.send'];
 const required = gmailScopes.filter(scope => scope.startsWith('https://'));
@@ -70,5 +70,13 @@ export function createGmailProvider(config: GmailConfig, store: CredentialStore,
         });
     }
 
-    return { begin, complete, client: (accountId: string): MailClient => createGmailClient(() => accessToken(accountId), request) };
+    // Google counts quota per mailbox, so the budget has to outlive the short-lived clients.
+    const budgets = new Map<string, QuotaBudget>();
+    const budgetFor = (accountId: string) => {
+        let budget = budgets.get(accountId);
+        if (!budget) { budget = createQuotaBudget(); budgets.set(accountId, budget); }
+        return budget;
+    };
+
+    return { begin, complete, client: (accountId: string): MailClient => createGmailClient(() => accessToken(accountId), request, undefined, budgetFor(accountId)) };
 }

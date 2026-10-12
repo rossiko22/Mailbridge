@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createGmailClient, toSyncedMessage } from '../src/integrations/gmail/api.js';
+import { createGmailClient, createQuotaBudget, toSyncedMessage } from '../src/integrations/gmail/api.js';
 import { MailError } from '../src/integrations/mail/errors.js';
 
 const b64 = (text: string) => Buffer.from(text).toString('base64url');
@@ -44,4 +44,50 @@ test('an expired history checkpoint is reported as 410 so the service can rebuil
 test('a rejected token asks for reconnect and never returns 401', async () => {
     const client = createGmailClient(async () => 'token', (async () => reply({}, 401)) as typeof fetch);
     await assert.rejects(client.sync(null), (error: unknown) => error instanceof MailError && error.status !== 401 && error.reconnect === true);
+});
+test('a rate-limited request is retried after a pause', async () => {
+    const waits: number[] = [];
+    let limited = 2;
+    const client = createGmailClient(async () => 'token', (async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/profile')) return reply({ historyId: '100' });
+        if (url.includes('/messages?')) return reply({ messages: [{ id: 'm1' }] });
+        if (limited-- > 0) return limited === 1 ? reply({}, 429) : reply({ error: { errors: [{ reason: 'userRateLimitExceeded' }] } }, 403);
+        return reply(message('m1'));
+    }) as typeof fetch, async ms => { waits.push(ms); });
+    const page = await client.sync(null);
+    assert.equal(page.messages.length, 1);
+    assert.equal(waits.length, 2);
+});
+test('rate limiting that does not clear is reported as 429 without asking for reconnect', async () => {
+    let calls = 0;
+    const client = createGmailClient(async () => 'token', (async () => { calls++; return reply({}, 429); }) as typeof fetch, async () => {});
+    await assert.rejects(client.sync(null), (error: unknown) => error instanceof MailError && error.status === 429 && !error.reconnect);
+    assert.equal(calls, 6);
+});
+test('a rate-limited send is not repeated', async () => {
+    let calls = 0;
+    const client = createGmailClient(async () => 'token', (async () => { calls++; return reply({}, 429); }) as typeof fetch, async () => {});
+    await assert.rejects(client.compose({ to: ['a@example.com'], subject: 'Hi', body: 'Text' }), (error: unknown) => error instanceof MailError && error.status === 429);
+    assert.equal(calls, 1);
+});
+test('requests beyond the per-minute quota wait for earlier ones to age out', async () => {
+    let clock = 0;
+    const waits: number[] = [];
+    const budget = createQuotaBudget(100, async ms => { waits.push(ms); clock += ms; }, () => clock);
+    for (let index = 0; index < 5; index++) { await budget.take(20); clock += 1_000; }
+    assert.deepEqual(waits, []);
+    await budget.take(20);
+    assert.deepEqual(waits, [55_000]);
+});
+test('a sync page spends its quota from the shared mailbox budget', async () => {
+    const taken: number[] = [];
+    const client = createGmailClient(async () => 'token', (async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/profile')) return reply({ historyId: '100' });
+        if (url.includes('/messages?')) return reply({ messages: [{ id: 'm1' }, { id: 'm2' }] });
+        return reply(message('m1'));
+    }) as typeof fetch, async () => {}, { take: async units => { taken.push(units); } });
+    await client.sync(null);
+    assert.deepEqual(taken, [1, 5, 20, 20]);
 });

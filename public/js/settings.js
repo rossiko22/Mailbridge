@@ -1,11 +1,11 @@
-// Settings: profile photo, connected accounts, password and appearance.
+// Settings: profile photo, connected accounts, password, recent activity and appearance.
 (() => {
   const { icon, api, json, avatar, toast, whoAmI, paintProfile, displayName, providerName, setNav } = window.App;
   window.App.mountAppbar();
 
   const el = (tag, className, text) => { const node = document.createElement(tag); if (className) node.className = className; if (text != null) node.textContent = text; return node; };
   const sections = [
-    ['profile', 'user', 'Profile'], ['accounts', 'layers', 'Mail accounts'], ['security', 'lock', 'Password'], ['appearance', 'palette', 'Appearance'],
+    ['profile', 'user', 'Profile'], ['accounts', 'layers', 'Mail accounts'], ['security', 'lock', 'Password'], ['activity', 'eye', 'Recent activity'], ['appearance', 'palette', 'Appearance'],
   ];
   const root = document.querySelector('#settings');
   const nav = document.querySelector('#settings-nav');
@@ -140,6 +140,48 @@
     body.append(form); return section;
   }
 
+  // ---------- Recent activity ----------
+  // Security events for this account, so a sign-in or change that was not yours stands out.
+  function describe(item) {
+    const d = item.detail ?? {}; const ok = item.outcome === 'success';
+    const mailbox = d.email || (d.provider ? providerName(d.provider) : 'a mailbox');
+    switch (item.event) {
+      case 'sign-in': return ok ? 'Signed in' : 'Failed sign-in attempt';
+      case 'sign-out': return 'Signed out';
+      case 'register': return 'Account created';
+      case 'password-change': return ok ? 'Password changed' : 'Password change refused: wrong current password';
+      case 'password-reset-request': return 'Password reset link requested';
+      case 'password-reset': return 'Password reset with an emailed link';
+      case 'account-connect': return ok ? `${d.renewed ? 'Reconnected' : 'Connected'} ${mailbox}` : `Could not connect ${mailbox}`;
+      case 'account-remove': return `Removed ${mailbox}`;
+      case 'mail-send': return ok ? ({ reply: 'Replied to a message', forward: 'Forwarded a message' }[d.action] ?? 'Sent a message') : 'A message could not be sent';
+      case 'mail-export': return 'Downloaded a message';
+      case 'attachment-download': return 'Downloaded an attachment';
+      case 'request-refused': return d.status === 429 ? 'Too many attempts: temporarily blocked' : 'Blocked a request from another site';
+      default: return item.event;
+    }
+  }
+  function device(userAgent) {
+    const browser = [['Edg/', 'Edge'], ['Firefox/', 'Firefox'], ['Chrome/', 'Chrome'], ['Safari/', 'Safari']].find(([mark]) => userAgent.includes(mark))?.[1];
+    const system = [['Windows', 'Windows'], ['Android', 'Android'], ['iPhone', 'iOS'], ['iPad', 'iOS'], ['Mac OS X', 'macOS'], ['Linux', 'Linux']].find(([mark]) => userAgent.includes(mark))?.[1];
+    return [browser, system].filter(Boolean).join(' on ') || 'Unknown device';
+  }
+  function activityCard() {
+    const { section, body } = card('activity', 'Recent activity', 'Sign-ins and changes on your account from the last 90 days. If something here was not you, change your password.');
+    const list = el('div'); list.id = 'activity-list'; body.append(list);
+    api('/auth/activity').then(data => {
+      if (!data.events.length) { list.append(el('p', 'muted', 'Nothing yet.')); return; }
+      for (const item of data.events) {
+        const row = el('div', 'account-row'); row.dataset.color = item.outcome === 'success' ? 'green' : 'red';
+        const info = el('div', 'account-row__info');
+        info.append(el('strong', 'truncate', describe(item)),
+          el('small', null, `${new Date(item.occurredAt).toLocaleString()} · ${device(item.userAgent)}${item.ip ? ` · ${item.ip}` : ''}`));
+        row.append(el('span', 'dot'), info); list.append(row);
+      }
+    }).catch(error => toast(error.message, 'error'));
+    return section;
+  }
+
   // ---------- Appearance ----------
   function appearanceCard() {
     const { section, body } = card('appearance', 'Appearance', 'Choose how Mailbridge looks on this device.');
@@ -155,7 +197,7 @@
   async function start() {
     try { user = await whoAmI(); } catch (error) { toast(error.message, 'error'); return; }
     user = { ...user };
-    const builders = { profile: profileCard, accounts: accountsCard, security: securityCard, appearance: appearanceCard };
+    const builders = { profile: profileCard, accounts: accountsCard, security: securityCard, activity: activityCard, appearance: appearanceCard };
     root.replaceChildren(el('h1', 'settings__title', 'Settings'));
     for (const [id, iconName, label] of sections) {
       const link = el('a', 'nav-item'); link.href = `#${id}`; link.insertAdjacentHTML('afterbegin', icon(iconName)); link.append(el('span', 'nav-item__text', label));

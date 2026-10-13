@@ -21,12 +21,25 @@ import { createEmailService } from './modules/emails/emails.service.js';
 import { createEmailRouter } from './modules/emails/emails.routes.js';
 import { requireSameSiteJson } from './middleware/json.middleware.js';
 import { securityHeaders, throttle } from './middleware/security.middleware.js';
+import { createAudit } from './modules/audit/audit.js';
 
 export const app = express();
 
 app.disable('x-powered-by');
 if (process.env.TRUST_PROXY === '1') app.set('trust proxy', 1);
 app.use(securityHeaders);
+const audit = createAudit(pool);
+// Requests turned away as cross-site, or throttled while signing in, are kept for review.
+app.use((req, res, next) => {
+    res.once('finish', () => {
+        if (res.statusCode !== 415 && !(res.statusCode === 429 && req.path.startsWith('/auth/'))) return;
+        void audit.record(req, 'request-refused', 'denied', {
+            email: typeof req.body?.email === 'string' ? req.body.email : undefined,
+            detail: { status: res.statusCode, method: req.method, path: req.path },
+        });
+    });
+    next();
+});
 app.use(requireSameSiteJson);
 // Profile photos arrive as small JSON data URLs; every other request body stays tiny.
 const smallJson = express.json({ limit: '64kb' });
@@ -38,14 +51,14 @@ const userService = createUserService(userRepository);
 const authMiddleware = createAuthMiddleware(userRepository);
 const authService = createAuthService(userRepository, createMailer(env.SMTP, env.NODE_ENV), env.PUBLIC_ORIGIN);
 
-const authController = createAuthController(userService, authService, env.ALLOW_REGISTRATION);
+const authController = createAuthController(userService, authService, env.ALLOW_REGISTRATION, audit);
 const userController = createUserController(userService);
 
 app.post('/auth/login', throttle(pool, env.SESSION_SECRET, 'login', { perIp: 50, perAccount: 10 }, 'Too many sign-in attempts. Wait 15 minutes and try again.'));
 app.post('/auth/register', throttle(pool, env.SESSION_SECRET, 'register', { perIp: 20, perAccount: 5 }));
 app.post('/auth/forgot', throttle(pool, env.SESSION_SECRET, 'forgot', { perIp: 20, perAccount: 5 }));
 app.post('/auth/reset', throttle(pool, env.SESSION_SECRET, 'reset', { perIp: 30 }));
-app.use("/auth", createAuthRouter(authController, authMiddleware));
+app.use("/auth", createAuthRouter(authController, authMiddleware, audit));
 
 app.use(
     "/users",
@@ -59,8 +72,8 @@ const registry = createMailRegistry({
     store: accounts.credentialStore,
 });
 const emailService = createEmailService(pool, createEmailRepository(pool), accounts, registry);
-app.use('/accounts', createAccountsRouter(authMiddleware, accounts, registry, emailService, env.GMAIL_ALLOWED_EMAILS));
-app.use('/emails', createEmailRouter(authMiddleware, emailService));
+app.use('/accounts', createAccountsRouter(authMiddleware, accounts, registry, emailService, env.GMAIL_ALLOWED_EMAILS, audit));
+app.use('/emails', createEmailRouter(authMiddleware, emailService, audit));
 
 app.get('/health', async (_req, res) => {
     await pool.query('SELECT 1');

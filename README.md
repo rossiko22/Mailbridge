@@ -39,6 +39,7 @@ Connect any number of mailboxes and read them together, with each account still 
 - **Reply, forward and compose** from any connected account. Read state is written back to the provider, so Outlook and Gmail stay in step.
 - **Attachments and export.** Download attachments, or save any message as an `.eml` file.
 - **Accounts and profile.** Sign up, sign in, reset a forgotten password by email, change your name and photo, and switch between light and dark themes.
+- **Recent activity.** Settings lists the sign-ins, password changes, mailbox connections and sends on your account, with time, device and address, so anything that was not you stands out.
 - **Works without any setup.** A seeded demo user with two demo mailboxes lets you try the whole interface before registering an OAuth app.
 
 ## Screenshots
@@ -101,6 +102,7 @@ flowchart LR
 | OAuth | Authorization code flow with PKCE and a single-use `state`. Tokens are encrypted with AES-256-GCM and bound to their account row, and they never reach the browser. |
 | Mail content | HTML is sanitized and shown in a sandboxed frame under its own Content-Security-Policy. Sync cursors are validated so a stored URL can never send a token to another host. |
 | Data isolation | Every query is scoped to the signed-in user. Another person's mail and accounts answer `404`. |
+| Audit trail | Sign-ins and failures, password changes and resets, mailbox connections, sends, downloads and refused requests are recorded with time, IP address, browser and request ID, and kept for 90 days. The log never holds mail content, recipients, passwords or tokens, and an attempt on an unknown address is stored without the address. |
 | Headers | Strict Content-Security-Policy, `X-Frame-Options: DENY`, `nosniff`, `no-referrer`, and HSTS in production. |
 | Container | Runs as a non-root user on a read-only filesystem with all capabilities dropped. |
 
@@ -163,7 +165,7 @@ The suite has three layers, all on Node's built-in test runner with no extra tes
 | Layer | Command | Needs | What it covers |
 | --- | --- | --- | --- |
 | Unit | `npm test` | nothing | Gmail and Outlook clients against recorded responses, quota budgeting and backoff, cursor validation, MIME handling, HTML sanitizing, credential encryption, validation rules |
-| Integration | `npm run test:integration` | PostgreSQL | The real app over HTTP against a real database: registration, sign-in, sessions, throttling, password reset, request-forgery checks, security headers, data isolation between users, the OAuth flow, sync, and send idempotency |
+| Integration | `npm run test:integration` | PostgreSQL | The real app over HTTP against a real database: registration, sign-in, sessions, throttling, password reset, request-forgery checks, security headers, data isolation between users, the OAuth flow, sync, send idempotency, and the audit trail |
 | Browser | `npm run test:e2e` | PostgreSQL, Chromium | Sign-in, the inbox, opening a message, filters and search, themes, settings, sign-out and the phone layout. Any console error or Content-Security-Policy violation fails the test |
 
 ```sh
@@ -175,7 +177,7 @@ npx playwright install chromium   # once, before the first browser run
 
 - **A separate database.** Integration and browser tests use `<POSTGRES_DB>_test`, created and migrated automatically, so they never touch development data.
 - **No network.** Google and Microsoft are replaced by in-process stand-ins; an unexpected outbound request fails the test.
-- **Coverage is enforced.** `test:coverage` fails below 90% of lines, 75% of branches or 85% of functions. It currently reports 93%, 80% and 90%.
+- **Coverage is enforced.** `test:coverage` fails below 90% of lines, 75% of branches or 85% of functions. It currently reports 93%, 81% and 89%.
 
 ## CI/CD
 
@@ -239,6 +241,7 @@ src/
   middleware/              security headers, same-site check, sessions, throttling, errors
   modules/
     auth/                  sign-in, registration, password reset
+    audit/                 the security event log
     users/                 profile and photo
     accounts/              connected mailboxes and the OAuth callback
     emails/                listing, reading, sending, export, HTML sanitizing

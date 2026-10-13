@@ -6,6 +6,7 @@ import type { MailRegistry } from '../../integrations/mail/registry.js';
 import { providerIds, type ProviderId } from '../../integrations/mail/types.js';
 import type { EmailService } from '../emails/emails.service.js';
 import type { createAccountsRepository } from './accounts.repository.js';
+import { noAudit, type Audit } from '../audit/audit.js';
 
 type AccountsRepository = ReturnType<typeof createAccountsRepository>;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -19,7 +20,7 @@ const back = (code: string, extra: Record<string, string> = {}) => `/app.html?${
 export const mayUseProvider = (allowedGmail: readonly string[], provider: ProviderId, email: string) =>
     provider !== 'gmail' || allowedGmail.length === 0 || allowedGmail.includes(email.trim().toLowerCase());
 
-export function createAccountsRouter(auth: ReturnType<typeof createAuthMiddleware>, accounts: AccountsRepository, registry: MailRegistry, emails: EmailService, allowedGmail: readonly string[] = []) {
+export function createAccountsRouter(auth: ReturnType<typeof createAuthMiddleware>, accounts: AccountsRepository, registry: MailRegistry, emails: EmailService, allowedGmail: readonly string[] = [], audit: Audit = noAudit) {
     const router = Router();
 
     // The two browser-navigation routes send signed-out visitors to the sign-in page instead of showing JSON.
@@ -46,14 +47,20 @@ export function createAccountsRouter(auth: ReturnType<typeof createAuthMiddlewar
         await saveSession(req);
         if (!id || !provider) { res.redirect(back('unavailable')); return; }
         if (!pending || pending.provider !== id || pending.expiresAt < Date.now() || typeof req.query.state !== 'string' || req.query.state !== pending.state) {
+            await audit.record(req, 'account-connect', 'denied', { detail: { provider: id, reason: 'invalid-state' } });
             res.redirect(back('invalid-state')); return;
         }
-        if (typeof req.query.code !== 'string') { res.redirect(back('denied')); return; }
+        if (typeof req.query.code !== 'string') {
+            await audit.record(req, 'account-connect', 'failure', { detail: { provider: id, reason: 'declined' } });
+            res.redirect(back('denied')); return;
+        }
         try {
             const profile = await provider.complete(req.query.code, pending);
             const saved = await accounts.upsertConnected(req.currentUser!.userId, id, profile.email, profile.displayName, profile.credentials);
+            await audit.record(req, 'account-connect', 'success', { target: saved.id, detail: { provider: id, email: profile.email, renewed: !saved.created } });
             res.redirect(back(saved.created ? 'ok' : 'renewed', { account: saved.id }));
         } catch (error) {
+            await audit.record(req, 'account-connect', 'failure', { detail: { provider: id, reason: 'provider-error' } });
             // Only messages written for people are passed on; anything else stays in the server log.
             if (error instanceof MailError) { res.redirect(back('failed', { message: error.message })); return; }
             console.error(JSON.stringify({ event: 'account-connect-error', provider: id, name: error instanceof Error ? error.name : 'Unknown' }));
@@ -78,7 +85,9 @@ export function createAccountsRouter(auth: ReturnType<typeof createAuthMiddlewar
     });
 
     router.delete('/:id', async (req, res) => {
-        if (!await accounts.remove(req.currentUser!.userId, String(req.params.id))) throw new MailError(404, 'Account not found.');
+        const account = await accounts.get(req.currentUser!.userId, String(req.params.id));
+        if (!account || !await accounts.remove(req.currentUser!.userId, account.id)) throw new MailError(404, 'Account not found.');
+        await audit.record(req, 'account-remove', 'success', { target: account.id, detail: { provider: account.provider, email: account.email } });
         res.json({ removed: true });
     });
 

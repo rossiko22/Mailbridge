@@ -1,19 +1,31 @@
-import { Router } from 'express';
+import { Router, type Request } from 'express';
 import type { createAuthMiddleware } from '../../middleware/auth.middleware.js';
 import { MailError } from '../../integrations/mail/errors.js';
 import type { EmailService } from './emails.service.js';
 import { defaultFilters, type MailFilters } from './emails.types.js';
 import { emailCsp, renderEmail } from './presentation.js';
+import { noAudit, type Audit } from '../audit/audit.js';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const address = /^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/;
 const addresses = (value: unknown): value is string[] => Array.isArray(value) && value.every(item => typeof item === 'string' && item.length <= 254 && address.test(item));
 
-export function createEmailRouter(auth: ReturnType<typeof createAuthMiddleware>, service: EmailService) {
+export function createEmailRouter(auth: ReturnType<typeof createAuthMiddleware>, service: EmailService, audit: Audit = noAudit) {
     const router = Router();
     router.use(auth.requireAuth);
     router.use((_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
     const me = (req: { currentUser?: { userId: string } }) => req.currentUser!.userId;
+    // Records who sent what kind of message and to how many people, never the text or the addresses.
+    async function audited<T>(req: Request, action: string, target: string, recipients: number, send: () => Promise<T>): Promise<T> {
+        try {
+            const result = await send();
+            await audit.record(req, 'mail-send', 'success', { target, detail: { action, recipients } });
+            return result;
+        } catch (error) {
+            await audit.record(req, 'mail-send', 'failure', { target, detail: { action, recipients, status: error instanceof MailError ? error.status : 500 } });
+            throw error;
+        }
+    }
 
     router.get('/', async (req, res) => {
         const q = req.query;
@@ -39,7 +51,8 @@ export function createEmailRouter(auth: ReturnType<typeof createAuthMiddleware>,
             !addresses(cc) || !addresses(bcc) || to.length + cc.length + bcc.length > 20) {
             throw new MailError(400, 'Choose an account, then enter a subject, a message and valid recipient addresses (maximum 20).');
         }
-        res.status(202).json(await service.compose(me(req), accountId, requestId, { subject, body, to, cc, bcc }));
+        res.status(202).json(await audited(req, 'compose', accountId, to.length + cc.length + bcc.length,
+            () => service.compose(me(req), accountId, requestId, { subject, body, to, cc, bcc })));
     });
 
     router.param('id', (_req, _res, next, id) => { next(uuid.test(id) ? undefined : new MailError(400, 'Invalid email ID.')); });
@@ -62,6 +75,7 @@ export function createEmailRouter(auth: ReturnType<typeof createAuthMiddleware>,
         if (req.query.original !== undefined && req.query.original !== 'true') throw new MailError(400, 'original must be true or omitted.');
         const original = req.query.original === 'true';
         const data = await service.exportEmail(me(req), String(req.params.id), original);
+        await audit.record(req, 'mail-export', 'success', { target: String(req.params.id), detail: { original } });
         res.attachment(`mail-${req.params.id}${original ? '-original' : '-text'}.eml`).type('message/rfc822').send(data);
     });
 
@@ -71,6 +85,7 @@ export function createEmailRouter(auth: ReturnType<typeof createAuthMiddleware>,
         const attachmentId = String(req.params.attachmentId);
         if (attachmentId.length > 2048 || /[\r\n\x00]/.test(attachmentId)) throw new MailError(400, 'Invalid attachment ID.');
         const result = await service.attachment(me(req), String(req.params.id), attachmentId);
+        await audit.record(req, 'attachment-download', 'success', { target: String(req.params.id) });
         const filename = result.name.replace(/[\x00-\x1f\x7f/\\]/g, '_').slice(0, 200) || 'attachment';
         res.set('X-Content-Type-Options', 'nosniff').attachment(filename).type('application/octet-stream').send(result.data);
     });
@@ -82,7 +97,8 @@ export function createEmailRouter(auth: ReturnType<typeof createAuthMiddleware>,
             !addresses(recipients) || recipients.length > 20 || (action === 'forward' && !recipients.length) || (action === 'reply' && recipients.length)) {
             throw new MailError(400, 'Enter a message and valid recipient email addresses (maximum 20).');
         }
-        res.status(202).json(await service.reply(me(req), String(req.params.id), requestId, action, comment, recipients));
+        res.status(202).json(await audited(req, action, String(req.params.id), recipients.length,
+            () => service.reply(me(req), String(req.params.id), requestId, action, comment, recipients)));
     });
 
     return router;

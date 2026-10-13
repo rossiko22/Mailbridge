@@ -117,11 +117,13 @@ test('the dark theme is remembered across pages', async () => {
     await page.goto('/settings.html');
     assert.equal(await page.getAttribute('html', 'data-theme'), 'dark');
 });
-test('settings list the connected accounts', async () => {
+test('settings list the connected accounts and recent activity', async () => {
     await openInbox();
     await page.goto('/settings.html');
     await page.getByText('demo.work@outlook.example').first().waitFor();
     await page.getByText('demo.personal@gmail.example').first().waitFor();
+    await page.locator('#activity-list').getByText('Signed in').first().waitFor();
+    assert.match(await page.locator('#activity-list .account-row small').first().textContent() ?? '', /Chrome on \w+ · 127\.0\.0\.1/);
     await shot('settings');
     const saved = await app.pool.query('SELECT count(*)::int AS n FROM mail_accounts');
     assert.equal(saved.rows[0].n, 2);

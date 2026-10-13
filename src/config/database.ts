@@ -21,7 +21,7 @@ pool.on("error", (error) => {
 // Call and await this during startup, before app.listen().
 export async function checkDatabaseConnection(): Promise<void> {
     await pool.query("SELECT 1");
-    for (const table of ['users','sessions','login_attempts','password_resets','user_avatars','mail_accounts','emails','email_bodies','outgoing_messages']) {
+    for (const table of ['users','sessions','login_attempts','password_resets','user_avatars','mail_accounts','emails','email_bodies','outgoing_messages','audit_events']) {
         const result = await pool.query('SELECT to_regclass($1) AS relation', [table]);
         if (!result.rows[0].relation) throw new Error(`Missing database table ${table}. Run migrations before starting the server.`);
     }

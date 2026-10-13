@@ -97,20 +97,21 @@ export async function createResetToken(userId: UUID, tokenHash: string, expiresA
 }
 
 // Spends the token, sets the password and signs the person out everywhere in one transaction.
-export async function resetPassword(tokenHash: string, passwordHash: string): Promise<boolean> {
+// Returns whose password was reset, or null when the token is unknown, used or expired.
+export async function resetPassword(tokenHash: string, passwordHash: string): Promise<UUID | null> {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
         const spent = await client.query<{ user_id: UUID }>(
             `UPDATE password_resets SET used_at=NOW() WHERE token_hash=$1 AND used_at IS NULL AND expires_at > NOW() RETURNING user_id`, [tokenHash]);
         const userId = spent.rows[0]?.user_id;
-        if (!userId) { await client.query('ROLLBACK'); return false; }
+        if (!userId) { await client.query('ROLLBACK'); return null; }
         const updated = await client.query('UPDATE users SET password_hash=$2 WHERE user_id=$1 AND is_active=TRUE', [userId, passwordHash]);
-        if (!updated.rowCount) { await client.query('ROLLBACK'); return false; }
+        if (!updated.rowCount) { await client.query('ROLLBACK'); return null; }
         await client.query("DELETE FROM sessions WHERE sess->>'userId'=$1", [userId]);
         await client.query('DELETE FROM password_resets WHERE user_id=$1', [userId]);
         await client.query('COMMIT');
-        return true;
+        return userId;
     } catch (error) { await client.query('ROLLBACK'); throw error; }
     finally { client.release(); }
 }

@@ -8,8 +8,10 @@ export const securityHeaders: RequestHandler = (req, res, next) => {
     res.locals.requestId = requestId;
     if (process.env.NODE_ENV === 'production' && req.path !== '/health') {
         const started = Date.now();
+        // The session is absent on requests refused before it loads.
         res.once('finish', () => console.log(JSON.stringify({ event: 'request', requestId, method: req.method,
-            path: req.path, status: res.statusCode, durationMs: Date.now() - started })));
+            path: req.path, status: res.statusCode, durationMs: Date.now() - started,
+            userId: (req.session as typeof req.session | undefined)?.userId, ip: req.ip })));
     }
     res.set({
         'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",

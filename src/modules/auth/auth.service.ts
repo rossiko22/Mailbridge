@@ -21,7 +21,7 @@ export function createAuthService(userRepository: UserRepository, mailer: Mailer
             .catch(error => console.error(JSON.stringify({ event: 'reset-mail-failed', name: error instanceof Error ? error.name : 'Unknown' })));
     }
 
-    async function resetPassword(token: string, newPassword: string): Promise<boolean> {
+    async function resetPassword(token: string, newPassword: string): Promise<string | null> {
         return userRepository.resetPassword(hashToken(token), await hashPassword(newPassword));
     }
 

@@ -15,22 +15,30 @@ const FETCH_BATCH = 4;
 // Google's documented backoff: start at one second and double.
 const RETRY_DELAYS = [1_000, 2_000, 4_000, 8_000, 16_000];
 const MAX_RETRY_WAIT = 32_000;
+const QUOTA_WINDOW = 60_000;
 // Gmail allows 6,000 quota units a minute for one mailbox. The remainder is left for other sessions of the same account.
 const MINUTE_BUDGET = 5_400;
 // Quota units per method, from https://developers.google.com/workspace/gmail/api/reference/quota
 const COST = { profile: 1, history: 2, list: 5, modify: 5, get: 20, attachment: 20, send: 100 };
 const sleep = (ms: number) => new Promise<void>(resolve => { setTimeout(resolve, ms); });
 
-export interface QuotaBudget { take(units: number): Promise<void> }
+export interface QuotaBudget { take(units: number): Promise<void>; pause(until: number): void }
 
 // Spreads requests so one mailbox never spends more than `limit` units in any 60 seconds.
 // Requests over the budget wait for earlier ones to age out instead of being rejected by Google.
 export function createQuotaBudget(limit = MINUTE_BUDGET, wait: (ms: number) => Promise<void> = sleep, now: () => number = Date.now): QuotaBudget {
     const spent: Array<{ at: number; units: number }> = [];
+    let pausedUntil = 0;
     return {
+        // Google said the minute is used up: hold every request until it starts a fresh one.
+        pause(until) {
+            pausedUntil = Math.max(pausedUntil, until);
+            spent.length = 0;
+        },
         async take(units) {
             for (;;) {
-                const cutoff = now() - 60_000;
+                if (now() < pausedUntil) { await wait(pausedUntil - now()); continue; }
+                const cutoff = now() - QUOTA_WINDOW;
                 while (spent.length && spent[0]!.at <= cutoff) spent.shift();
                 const used = spent.reduce((sum, item) => sum + item.units, 0);
                 if (used + units <= limit || !spent.length) { spent.push({ at: now(), units }); return; }
@@ -104,6 +112,7 @@ type Cursor =
     | { mode: 'delta'; historyId: string; pageToken?: string; latest?: string };
 
 export function createGmailClient(getToken: () => Promise<string>, request: typeof fetch = fetch, wait: (ms: number) => Promise<void> = sleep, budget: QuotaBudget = createQuotaBudget(MINUTE_BUDGET, wait)): MailClient {
+    interface GoogleFailure { status?: string; errors?: Array<{ reason?: string }>; details?: Array<{ metadata?: { window_start_time?: string } }> }
     interface Call { cost: number; method?: string; body?: unknown; write?: boolean; uncertain?: boolean; allow404?: boolean }
     async function attempt(path: string, options: Call): Promise<Response> {
         const headers: Record<string, string> = { Authorization: `Bearer ${await getToken()}` };
@@ -119,16 +128,20 @@ export function createGmailClient(getToken: () => Promise<string>, request: type
             const response = await attempt(path, options);
             if (response.ok) return response;
             if (response.status === 401) throw new GmailError(502, 'Google rejected the sign-in for this account. Reconnect it in Settings.', true);
-            const reason = response.status === 403
-                ? await response.clone().json().then((data: { error?: { errors?: Array<{ reason?: string }>; status?: string } }) =>
-                    data.error?.errors?.[0]?.reason ?? data.error?.status ?? '', () => '')
-                : '';
-            // Short bursts trip Gmail's per-user limits; those clear within seconds, so back off and try again.
+            const failure: GoogleFailure = response.status === 403 || response.status === 429
+                ? await response.clone().json().then((data: { error?: GoogleFailure }) => data.error ?? {}, () => ({}))
+                : {};
+            const reason = response.status === 403 ? failure.errors?.[0]?.reason ?? failure.status ?? '' : '';
+            // Per-minute limits clear by themselves, so wait and try again.
             // A used-up daily quota does not, and sends are never repeated.
             const limited = response.status === 429 || /ratelimit/i.test(reason);
             if (limited && !options.uncertain && tries < RETRY_DELAYS.length) {
+                // Quota is counted in fixed minutes and the error says when the current one began.
+                const windowStart = Number(failure.details?.find(detail => detail.metadata?.window_start_time)?.metadata?.window_start_time) * 1000;
+                const resumeAt = windowStart + QUOTA_WINDOW + 1_000;
                 const asked = Number(response.headers.get('Retry-After')) * 1000;
-                await wait(Math.min(asked > 0 ? asked : RETRY_DELAYS[tries]! * (0.5 + Math.random()), MAX_RETRY_WAIT));
+                if (resumeAt > Date.now() && resumeAt - Date.now() <= QUOTA_WINDOW + 5_000) budget.pause(resumeAt);
+                else await wait(Math.min(asked > 0 ? asked : RETRY_DELAYS[tries]! * (0.5 + Math.random()), MAX_RETRY_WAIT));
                 continue;
             }
             if (limited || /quota/i.test(reason)) throw new GmailError(429, 'Google is limiting requests. Wait a moment and try again.');

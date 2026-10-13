@@ -87,7 +87,28 @@ test('a sync page spends its quota from the shared mailbox budget', async () => 
         if (url.includes('/profile')) return reply({ historyId: '100' });
         if (url.includes('/messages?')) return reply({ messages: [{ id: 'm1' }, { id: 'm2' }] });
         return reply(message('m1'));
-    }) as typeof fetch, async () => {}, { take: async units => { taken.push(units); } });
+    }) as typeof fetch, async () => {}, { take: async units => { taken.push(units); }, pause: () => {} });
     await client.sync(null);
     assert.deepEqual(taken, [1, 5, 20, 20]);
+});
+test('an exhausted quota minute pauses the mailbox until Google starts the next one', async () => {
+    const pauses: number[] = [];
+    let limited = true;
+    const windowStart = Math.floor(Date.now() / 1000) - 20;
+    const client = createGmailClient(async () => 'token', (async () => {
+        if (!limited) return reply({ historyId: '100', messages: [] });
+        limited = false;
+        return reply({ error: { errors: [{ reason: 'rateLimitExceeded' }], details: [{ metadata: { window_start_time: String(windowStart) } }] } }, 403);
+    }) as typeof fetch, async () => { assert.fail('should wait for the quota window, not back off'); }, { take: async () => {}, pause: until => { pauses.push(until); } });
+    await client.sync(null);
+    assert.deepEqual(pauses, [windowStart * 1000 + 61_000]);
+});
+test('a paused budget holds requests until the pause ends and then starts fresh', async () => {
+    let clock = 0;
+    const waits: number[] = [];
+    const budget = createQuotaBudget(100, async ms => { waits.push(ms); clock += ms; }, () => clock);
+    await budget.take(100);
+    budget.pause(40_000);
+    await budget.take(100);
+    assert.deepEqual(waits, [40_000]);
 });

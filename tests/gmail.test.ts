@@ -68,7 +68,7 @@ test('rate limiting that does not clear is reported as 429 without asking for re
 test('a rate-limited send is not repeated', async () => {
     let calls = 0;
     const client = createGmailClient(async () => 'token', (async () => { calls++; return reply({}, 429); }) as typeof fetch, async () => {});
-    await assert.rejects(client.compose({ to: ['a@example.com'], subject: 'Hi', body: 'Text' }), (error: unknown) => error instanceof MailError && error.status === 429);
+    await assert.rejects(client.compose({ to: ['a@example.com'], cc: [], bcc: [], subject: 'Hi', body: 'Text' }), (error: unknown) => error instanceof MailError && error.status === 429);
     assert.equal(calls, 1);
 });
 test('requests beyond the per-minute quota wait for earlier ones to age out', async () => {

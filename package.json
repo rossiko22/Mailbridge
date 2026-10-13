@@ -8,26 +8,30 @@
     "migration": "tsx src/scripts/migrate.ts",
     "seed": "tsx src/scripts/seed-development.ts",
     "test": "node --import tsx --test tests/*.test.ts",
+    "test:integration": "node --import tsx --test --test-concurrency=1 tests/integration/*.test.ts",
+    "test:e2e": "node --import tsx --test --test-concurrency=1 --test-timeout=60000 tests/e2e/*.test.ts",
+    "test:coverage": "node --import tsx --test --test-concurrency=1 --experimental-test-coverage --test-coverage-include='src/**' --test-coverage-exclude='src/scripts/**' --test-coverage-lines=90 --test-coverage-branches=75 --test-coverage-functions=85 tests/*.test.ts tests/integration/*.test.ts",
+    "test:all": "npm test && npm run test:integration && npm run test:e2e",
     "dev": "tsx watch --include .env src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
     "check": "npm run typecheck && npm test && npm run build",
     "migration:prod": "node dist/scripts/migrate.js",
     "admin:reset-password": "node dist/scripts/reset-password.js"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/rossiko22/Ticketing-System-Outlook.git"
+    "url": "git+https://github.com/rossiko22/Mailbridge.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "module",
   "bugs": {
-    "url": "https://github.com/rossiko22/Ticketing-System-Outlook/issues"
+    "url": "https://github.com/rossiko22/Mailbridge/issues"
   },
-  "homepage": "https://github.com/rossiko22/Ticketing-System-Outlook#readme",
+  "homepage": "https://github.com/rossiko22/Mailbridge#readme",
   "devDependencies": {
     "@types/argon2": "^0.14.1",
     "@types/connect-pg-simple": "^7.0.3",

@@ -5,7 +5,7 @@ import type * as repository from '../src/modules/users/users.repository.js';
 import { verifyHashPassword } from '../src/security/password.js';
 
 test('new users are stored with a password hash and responses omit that hash', async () => {
-    const service = createUserService({ findByEmail: async () => null, create: async (email, passwordHash) => {
+    const service = createUserService({ findByEmail: async () => null, create: async (email: string, passwordHash: string) => {
         assert.equal(email,'person@example.com');
         assert.notEqual(passwordHash,'test-password');
         assert.equal(await verifyHashPassword(passwordHash,'test-password'),true);

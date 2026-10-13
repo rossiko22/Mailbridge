@@ -121,7 +121,7 @@ npm run seed        # demo user demo@example.test / Demo-Password-123! with two 
 npm run dev         # http://localhost:3000
 ```
 
-Without OAuth credentials the demo mailboxes still work; the Connect buttons stay disabled until a provider is configured. Without SMTP, password reset links are printed to the server log (development only).
+Without OAuth credentials the demo mailboxes still work; the Connect buttons stay disabled until a provider is configured. Password reset emails are caught by Mailpit: run `docker compose up -d mailpit` and read them at http://localhost:8025. Nothing is delivered to real inboxes. With `SMTP_HOST` empty, reset links are printed to the server log instead (development only).
 
 To browse the database, run `docker compose up -d pgadmin` and open http://localhost:5050. Sign in with `PGADMIN_DEFAULT_EMAIL` / `PGADMIN_DEFAULT_PASSWORD` from `.env`; the Mailbridge server is already listed and asks for `POSTGRES_PASSWORD`.
 

@@ -20,10 +20,41 @@ services:
     networks:
       - postgres_network
 
+  # Database browser for local development: http://localhost:5050
+  pgadmin:
+    image: dpage/pgadmin4:9
+    container_name: ${PGADMIN_CONTAINER_NAME:-pgadmin}
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
+    ports:
+      - "127.0.0.1:${PGADMIN_PORT:-5050}:80"
+    configs:
+      - source: pgadmin_servers
+        target: /pgadmin4/servers.json
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - postgres_network
+
+# Registers the database in pgAdmin on first start, so only its password has to be typed.
+configs:
+  pgadmin_servers:
+    content: |
+      {"Servers": {"1": {"Name": "Mailbridge", "Group": "Servers", "Host": "postgres", "Port": 5432,
+        "MaintenanceDB": "${POSTGRES_DB}", "Username": "${POSTGRES_USER}", "SSLMode": "prefer"}}}
+
 volumes:
   postgres_data:
     driver: local
     name: ${POSTGRES_VOLUME_NAME:-postgres_data}
+  pgadmin_data:
+    driver: local
+    name: ${PGADMIN_VOLUME_NAME:-pgadmin_data}
 
 networks:
   postgres_network:

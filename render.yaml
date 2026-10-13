@@ -1,0 +1,51 @@
+# Render Blueprint (free plan). In the Render dashboard: New > Blueprint, then pick this repository.
+# Optional settings (OAuth apps, SMTP, ALLOW_REGISTRATION) are added afterwards under the service's Environment tab;
+# see .env.production.example for the names.
+databases:
+  - name: mailbridge-db
+    plan: free
+    region: frankfurt
+    databaseName: ticket_mail
+    user: ticket_mail
+    # Reachable only from services in this Render account, over the private network.
+    ipAllowList: []
+
+services:
+  - type: web
+    name: mailbridge
+    runtime: docker
+    plan: free
+    region: frankfurt
+    # The free plan has no pre-deploy step, so migrations run on every start.
+    dockerCommand: npm run start:render
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TRUST_PROXY
+        value: "1"
+      # PUBLIC_ORIGIN falls back to the onrender.com address. Set it here once a custom domain is attached.
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: TOKEN_ENCRYPTION_KEY
+        generateValue: true
+      - key: POSTGRES_HOST
+        fromDatabase:
+          name: mailbridge-db
+          property: host
+      - key: POSTGRES_PORT
+        fromDatabase:
+          name: mailbridge-db
+          property: port
+      - key: POSTGRES_DB
+        fromDatabase:
+          name: mailbridge-db
+          property: database
+      - key: POSTGRES_USER
+        fromDatabase:
+          name: mailbridge-db
+          property: user
+      - key: POSTGRES_PASSWORD
+        fromDatabase:
+          name: mailbridge-db
+          property: password

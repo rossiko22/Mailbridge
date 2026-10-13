@@ -24,6 +24,9 @@ function oauthApp(prefix: string): { clientId: string; clientSecret: string } | 
     return { clientId, clientSecret };
 }
 
+// Render provides the service's public address; use it until PUBLIC_ORIGIN is set explicitly.
+if (!process.env.PUBLIC_ORIGIN?.trim() && process.env.RENDER_EXTERNAL_URL) process.env.PUBLIC_ORIGIN = process.env.RENDER_EXTERNAL_URL;
+
 const port = Number(process.env.PORT || 3000);
 const postgresPort = Number(required("POSTGRES_PORT"));
 const nodeEnv = required('NODE_ENV');

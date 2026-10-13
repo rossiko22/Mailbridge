@@ -96,9 +96,9 @@ flowchart LR
 | Area | What is done |
 | --- | --- |
 | Passwords | Argon2id (128 MiB, 3 passes). Reset tokens are single-use, expire after 30 minutes, are stored only as a hash and travel in the URL fragment. |
-| Sessions | Server-side sessions in PostgreSQL. The cookie is `HttpOnly`, `SameSite=Lax` and `Secure` in production. The session ID is replaced on sign-in, and changing or resetting a password signs out every session. |
+| Sessions | Server-side sessions in PostgreSQL. The cookie is `HttpOnly`, `SameSite=Lax` and `Secure` in production. The session ID is replaced on sign-in, a session ends after 8 idle hours and at most 7 days after sign-in, and changing or resetting a password signs out every session. |
 | Request forgery | Every state-changing request must be same-site `application/json`; cross-site and foreign-origin requests are refused. |
-| Brute force | Sign-in, registration and reset attempts are counted per address and per account. Counter keys are HMAC-hashed, so the table stores no email or IP addresses. |
+| Brute force | Sign-in, registration and reset attempts are counted per address and per account, and password changes and sends per signed-in person. An unknown address is refused as slowly as a wrong password. Counter keys are HMAC-hashed, so the table stores no email or IP addresses. |
 | OAuth | Authorization code flow with PKCE and a single-use `state`. Tokens are encrypted with AES-256-GCM and bound to their account row, and they never reach the browser. |
 | Mail content | HTML is sanitized and shown in a sandboxed frame under its own Content-Security-Policy. Sync cursors are validated so a stored URL can never send a token to another host. |
 | Data isolation | Every query is scoped to the signed-in user. Another person's mail and accounts answer `404`. |
@@ -106,7 +106,7 @@ flowchart LR
 | Headers | Strict Content-Security-Policy, `X-Frame-Options: DENY`, `nosniff`, `no-referrer`, and HSTS in production. |
 | Container | Runs as a non-root user on a read-only filesystem with all capabilities dropped. |
 
-Each row above is exercised by the test suite described under [Testing](#testing).
+Each row above is exercised by the test suite described under [Testing](#testing). [SECURITY.md](SECURITY.md) maps these protections to the OWASP Top 10, lists the known limits and says how to report a problem.
 
 ## Quick start
 

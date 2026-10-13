@@ -29,10 +29,10 @@ app.disable('x-powered-by');
 if (process.env.TRUST_PROXY === '1') app.set('trust proxy', 1);
 app.use(securityHeaders);
 const audit = createAudit(pool);
-// Requests turned away as cross-site, or throttled while signing in, are kept for review.
+// Requests turned away as cross-site or throttled are kept for review.
 app.use((req, res, next) => {
     res.once('finish', () => {
-        if (res.statusCode !== 415 && !(res.statusCode === 429 && req.path.startsWith('/auth/'))) return;
+        if (res.statusCode !== 415 && !res.locals.throttled) return;
         void audit.record(req, 'request-refused', 'denied', {
             email: typeof req.body?.email === 'string' ? req.body.email : undefined,
             detail: { status: res.statusCode, method: req.method, path: req.path },
@@ -58,6 +58,11 @@ app.post('/auth/login', throttle(pool, env.SESSION_SECRET, 'login', { perIp: 50,
 app.post('/auth/register', throttle(pool, env.SESSION_SECRET, 'register', { perIp: 20, perAccount: 5 }));
 app.post('/auth/forgot', throttle(pool, env.SESSION_SECRET, 'forgot', { perIp: 20, perAccount: 5 }));
 app.post('/auth/reset', throttle(pool, env.SESSION_SECRET, 'reset', { perIp: 30 }));
+// A stolen session must not be usable to guess the current password, flood other people with mail or hammer the providers.
+app.post('/auth/password', throttle(pool, env.SESSION_SECRET, 'password', { perUser: 10 }));
+app.post(['/emails/compose', '/emails/:id/send'], throttle(pool, env.SESSION_SECRET, 'send', { perUser: 60 }, 'Too many messages sent. Wait 15 minutes and try again.'));
+app.get('/accounts/connect/:provider', throttle(pool, env.SESSION_SECRET, 'connect', { perUser: 30 }));
+app.put('/users/me/avatar', throttle(pool, env.SESSION_SECRET, 'avatar', { perUser: 30 }));
 app.use("/auth", createAuthRouter(authController, authMiddleware, audit));
 
 app.use(

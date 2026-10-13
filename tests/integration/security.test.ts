@@ -1,6 +1,8 @@
 import { after, before, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createClient, register, startApp, type TestApp } from '../support/harness.js';
+import { randomUUID } from 'node:crypto';
+import { MAX_SESSION_AGE } from '../../src/middleware/auth.middleware.js';
+import { createClient, PASSWORD, register, startApp, type TestApp } from '../support/harness.js';
 
 let app: TestApp;
 before(async () => { app = await startApp(); });
@@ -16,6 +18,8 @@ test('the health check answers and every response carries the security headers',
     assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
     assert.equal(response.headers.get('x-frame-options'), 'DENY');
     assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
+    assert.equal(response.headers.get('cross-origin-opener-policy'), 'same-origin');
+    assert.equal(response.headers.get('cross-origin-resource-policy'), 'same-origin');
     assert.match(response.headers.get('x-request-id') ?? '', /^[0-9a-f-]{36}$/);
     assert.equal(response.headers.get('x-powered-by'), null);
 });
@@ -87,4 +91,29 @@ test('profile names and photos are validated', async () => {
     assert.deepEqual(Buffer.from(await photo.arrayBuffer()), png);
     assert.equal((await client.delete('/users/me/avatar')).status, 200);
     assert.equal((await client.get('/users/me/avatar')).status, 404);
+});
+test('a session ends a fixed time after sign-in, however active it has been', async () => {
+    const { client } = await register(app, 'person@example.com');
+    assert.equal((await client.get('/auth/me')).status, 200);
+    await app.pool.query(`UPDATE sessions SET sess = jsonb_set(sess::jsonb, '{signedInAt}', to_jsonb($1::bigint))::json`, [Date.now() - MAX_SESSION_AGE - 60_000]);
+    assert.equal((await client.get('/auth/me')).status, 401);
+    assert.equal((await app.pool.query('SELECT 1 FROM sessions')).rowCount, 0, 'the expired session is removed');
+});
+test('a signed-in session cannot be used to guess the current password without limit', async () => {
+    const { client } = await register(app, 'person@example.com');
+    for (let attempt = 0; attempt < 10; attempt++) {
+        assert.equal((await client.post('/auth/password', { currentPassword: `guess-number-${attempt}`, newPassword: 'a-brand-new-password' })).status, 400);
+    }
+    const blocked = await client.post('/auth/password', { currentPassword: PASSWORD, newPassword: 'a-brand-new-password' });
+    assert.equal(blocked.status, 429);
+    assert.equal(blocked.headers.get('retry-after'), '900');
+    const { client: other } = await register(app, 'other@example.com');
+    assert.equal((await other.post('/auth/password', { currentPassword: 'not-the-password', newPassword: 'a-brand-new-password' })).status, 400, 'limits are per person');
+});
+test('sending is limited per person', async () => {
+    const { client } = await register(app, 'person@example.com');
+    const message = { accountId: randomUUID(), subject: 'Hi', body: 'Text', to: ['a@example.com'] };
+    for (let attempt = 0; attempt < 60; attempt++) assert.equal((await client.post('/emails/compose', { ...message, requestId: randomUUID() })).status, 404);
+    assert.equal((await client.post('/emails/compose', { ...message, requestId: randomUUID() })).status, 429);
+    assert.equal((await client.post(`/emails/${randomUUID()}/send`, { action: 'reply', requestId: randomUUID(), comment: 'Hi' })).status, 429);
 });

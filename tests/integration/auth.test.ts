@@ -135,3 +135,12 @@ test('an expired reset link and a superseded one are both refused', async () => 
     assert.equal((await visitor.post('/auth/reset', { token: second.token, password: 'a-brand-new-password' })).status, 400);
     assert.equal((await login('person@example.com', PASSWORD)).status, 200);
 });
+test('refusing an unknown address takes as long as refusing a wrong password', async () => {
+    await register(app, 'person@example.com');
+    const time = async (email: string) => { const started = performance.now(); await login(email, 'wrong-password-123'); return performance.now() - started; };
+    await time('person@example.com');
+    const known = Math.min(await time('person@example.com'), await time('person@example.com'));
+    await time('nobody@example.com');
+    const unknown = Math.min(await time('nobody@example.com'), await time('nobody-else@example.com'));
+    assert.ok(unknown > known * 0.5, `unknown address answered in ${unknown.toFixed(0)}ms, known in ${known.toFixed(0)}ms`);
+});

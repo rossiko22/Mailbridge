@@ -15,6 +15,7 @@ export function createAuthController(userService: UserService, authService: Auth
             req.session.regenerate(error => error ? reject(error) : resolve());
         });
         req.session.userId = user.userId;
+        req.session.signedInAt = Date.now();
         await new Promise<void>((resolve, reject) => {
             req.session.save(error => error ? reject(error) : resolve());
         });

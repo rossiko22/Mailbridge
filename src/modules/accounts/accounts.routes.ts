@@ -61,9 +61,9 @@ export function createAccountsRouter(auth: ReturnType<typeof createAuthMiddlewar
             res.redirect(back(saved.created ? 'ok' : 'renewed', { account: saved.id }));
         } catch (error) {
             await audit.record(req, 'account-connect', 'failure', { detail: { provider: id, reason: 'provider-error' } });
-            // Only messages written for people are passed on; anything else stays in the server log.
-            if (error instanceof MailError) { res.redirect(back('failed', { message: error.message })); return; }
-            console.error(JSON.stringify({ event: 'account-connect-error', provider: id, name: error instanceof Error ? error.name : 'Unknown' }));
+            // The reason waits in the session: text taken from a URL could be written by anyone who crafts a link.
+            if (error instanceof MailError) { req.session.connectNotice = error.message; await saveSession(req); }
+            else console.error(JSON.stringify({ event: 'account-connect-error', provider: id, name: error instanceof Error ? error.name : 'Unknown' }));
             res.redirect(back('failed'));
         }
     });
@@ -75,7 +75,9 @@ export function createAccountsRouter(auth: ReturnType<typeof createAuthMiddlewar
         // A provider this person may not use is left out entirely, so the UI never offers it.
         const providers: Partial<Record<ProviderId, boolean>> = registry.available();
         for (const id of providerIds) if (!mayUseProvider(allowedGmail, id, req.currentUser!.email)) delete providers[id];
-        res.json({ accounts: await accounts.list(req.currentUser!.userId), providers });
+        const notice = req.session.connectNotice;
+        if (notice) { delete req.session.connectNotice; await saveSession(req); }
+        res.json({ accounts: await accounts.list(req.currentUser!.userId), providers, ...(notice ? { notice } : {}) });
     });
 
     router.param('id', (_req, _res, next, id) => { next(uuid.test(id) ? undefined : new MailError(400, 'Invalid account ID.')); });

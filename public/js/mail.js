@@ -101,7 +101,7 @@
 
   async function loadAccounts() {
     const data = await api('/accounts');
-    state.accounts = data.accounts; state.providers = data.providers;
+    state.accounts = data.accounts; state.providers = data.providers; state.notice = data.notice;
     if (state.accountId && !account(state.accountId)) state.accountId = null;
     renderAddMenu(); renderAccounts(); renderBanner();
   }
@@ -513,13 +513,12 @@
     const params = new URLSearchParams(location.search);
     state.accountId = params.get('account');
     const connect = params.get('connect');
-    if (connect) {
-      const [text, tone] = connectMessages[connect] ?? [params.get('message') || 'Could not connect the account.', 'error'];
-      toast(connect === 'failed' ? (params.get('message') || text) : text, tone);
-    }
+    // Only fixed texts are shown for a result named in the address; the reason for a failure comes from the server.
+    if (connectMessages[connect]) toast(...connectMessages[connect]);
     if (params.has('connect') || params.has('message')) { const url = new URL(location.href); url.search = state.accountId ? `?account=${state.accountId}` : ''; history.replaceState(null, '', url); }
     try { await whoAmI(); await loadAccounts(); }
     catch (error) { toast(error.message, 'error'); return; }
+    if (state.notice || (connect && !connectMessages[connect])) toast(state.notice || 'Could not connect the account.', 'error');
     await loadList();
     if (['ok', 'renewed'].includes(connect) || state.accounts.some(item => !item.isDemo && !item.syncedAt)) syncAll({ auto: true });
     else if (state.accounts.some(item => !item.isDemo)) syncAll({ auto: true });

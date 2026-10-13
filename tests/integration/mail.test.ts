@@ -177,8 +177,11 @@ test('consent without every mail permission is refused', async () => {
     app.setUpstream(url => url.hostname === 'oauth2.googleapis.com'
         ? json({ access_token: 'a', refresh_token: 'r', expires_in: 3600, scope: 'openid email profile https://www.googleapis.com/auth/gmail.send' }) : undefined);
     const done = await client.get(`/accounts/callback/gmail?state=${state}&code=auth-code`);
-    assert.match(done.headers.get('location') ?? '', /^\/app\.html\?connect=failed&message=Allow\+every\+requested\+Gmail\+permission/);
-    assert.equal((await accountsOf(client)).accounts.length, 0);
+    assert.equal(done.headers.get('location'), '/app.html?connect=failed', 'the reason is not put in the address, where anyone could forge it');
+    const first = await (await client.get('/accounts')).json() as { accounts: Account[]; notice?: string };
+    assert.match(first.notice ?? '', /^Allow every requested Gmail permission/);
+    assert.equal(first.accounts.length, 0);
+    assert.ok(!('notice' in await accountsOf(client)), 'the reason is shown once');
 });
 
 test('syncing pulls the inbox, then applies later changes incrementally', async () => {

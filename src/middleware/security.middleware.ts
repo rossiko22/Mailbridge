@@ -3,43 +3,46 @@ import { createHmac, randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
 import { sendError } from '../http/errors.js';
 
-export const securityHeaders: RequestHandler = (req, res, next) => {
-    const requestId = randomUUID();
-    res.set('X-Request-ID', requestId);
-    res.locals.requestId = requestId;
-    if (process.env.NODE_ENV === 'production' && req.path !== '/health') {
-        const started = Date.now();
-        // The session is absent on requests refused before it loads.
-        res.once('finish', () =>
-            console.log(
-                JSON.stringify({
-                    event: 'request',
-                    requestId,
-                    method: req.method,
-                    path: req.path,
-                    status: res.statusCode,
-                    durationMs: Date.now() - started,
-                    userId: (req.session as typeof req.session | undefined)?.userId,
-                    ip: req.ip,
-                }),
-            ),
-        );
-    }
-    res.set({
-        'Content-Security-Policy':
-            "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
-        'X-Content-Type-Options': 'nosniff',
-        'X-Frame-Options': 'DENY',
-        'Referrer-Policy': 'no-referrer',
-        'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
-        'Cross-Origin-Opener-Policy': 'same-origin',
-        'Cross-Origin-Resource-Policy': 'same-origin',
-        'X-Permitted-Cross-Domain-Policies': 'none',
-        'Cache-Control': 'no-store',
-    });
-    if (process.env.NODE_ENV === 'production') res.set('Strict-Transport-Security', 'max-age=31536000');
-    next();
-};
+// Request ID, the request log line (production) and the security headers every response carries.
+export const createSecurityHeaders =
+    ({ production }: { production: boolean }): RequestHandler =>
+    (req, res, next) => {
+        const requestId = randomUUID();
+        res.set('X-Request-ID', requestId);
+        res.locals.requestId = requestId;
+        if (production && req.path !== '/health') {
+            const started = Date.now();
+            // The session is absent on requests refused before it loads.
+            res.once('finish', () =>
+                console.log(
+                    JSON.stringify({
+                        event: 'request',
+                        requestId,
+                        method: req.method,
+                        path: req.path,
+                        status: res.statusCode,
+                        durationMs: Date.now() - started,
+                        userId: (req.session as typeof req.session | undefined)?.userId,
+                        ip: req.ip,
+                    }),
+                ),
+            );
+        }
+        res.set({
+            'Content-Security-Policy':
+                "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+            'X-Content-Type-Options': 'nosniff',
+            'X-Frame-Options': 'DENY',
+            'Referrer-Policy': 'no-referrer',
+            'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+            'Cross-Origin-Opener-Policy': 'same-origin',
+            'Cross-Origin-Resource-Policy': 'same-origin',
+            'X-Permitted-Cross-Domain-Policies': 'none',
+            'Cache-Control': 'no-store',
+        });
+        if (production) res.set('Strict-Transport-Security', 'max-age=31536000');
+        next();
+    };
 
 export interface ThrottleLimits {
     perIp?: number;

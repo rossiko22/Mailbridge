@@ -6,8 +6,8 @@ import { createMailRegistry } from './integrations/mail/registry.js';
 import { createMailer } from './integrations/mailer.js';
 import { createAuthMiddleware } from './middleware/auth.middleware.js';
 import { errorMiddleware, notFoundMiddleware } from './middleware/error.middleware.js';
-import { requireSameSiteJson } from './middleware/json.middleware.js';
-import { securityHeaders, throttle } from './middleware/security.middleware.js';
+import { createRequireSameSiteJson } from './middleware/json.middleware.js';
+import { createSecurityHeaders, throttle } from './middleware/security.middleware.js';
 import { createSessionMiddleware } from './middleware/session.middleware.js';
 import { createAccountsRepository } from './modules/accounts/accounts.repository.js';
 import { createAccountsRouter } from './modules/accounts/accounts.routes.js';
@@ -33,8 +33,9 @@ export function createApp({ pool, env }: AppDependencies) {
     const app = express();
 
     app.disable('x-powered-by');
-    if (process.env.TRUST_PROXY === '1') app.set('trust proxy', 1);
-    app.use(securityHeaders);
+    // Only this many proxies in front of the app may tell it the client's address (X-Forwarded-For).
+    if (env.TRUST_PROXY > 0) app.set('trust proxy', env.TRUST_PROXY);
+    app.use(createSecurityHeaders({ production: env.NODE_ENV === 'production' }));
     const audit = createAudit(pool);
     // Requests turned away as cross-site or throttled are kept for review.
     app.use((req, res, next) => {
@@ -47,7 +48,7 @@ export function createApp({ pool, env }: AppDependencies) {
         });
         next();
     });
-    app.use(requireSameSiteJson);
+    app.use(createRequireSameSiteJson(env.EXPECTED_ORIGIN));
     // Profile photos arrive as small JSON data URLs; every other request body stays tiny.
     const smallJson = express.json({ limit: '64kb' });
     const photoJson = express.json({ limit: '800kb' });

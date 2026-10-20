@@ -1,88 +1,143 @@
 import 'dotenv/config';
+import { z } from 'zod';
 
-function required(name: string): string {
-    const value = process.env[name];
+// Every setting the app reads, checked once at startup. A bad value stops the process with the setting's name,
+// never its value (values may be secrets). Nothing else in src/ reads process.env, except the one-off scripts.
 
-    if (value === undefined || value.trim() === '') {
-        throw new Error(`Missing environment variable: ${name}`);
+const blankToUndefined = (value: unknown) => (typeof value === 'string' && value.trim() === '' ? undefined : value);
+const text = () => z.preprocess(blankToUndefined, z.string().trim());
+const optionalText = () => z.preprocess(blankToUndefined, z.string().trim().optional());
+const port = () => z.coerce.number().int().min(1).max(65535);
+const flag = (fallback: boolean) =>
+    z
+        .preprocess(blankToUndefined, z.enum(['true', 'false']).optional())
+        .transform(value => (value === undefined ? fallback : value === 'true'));
+
+const schema = z
+    .object({
+        NODE_ENV: z.enum(['development', 'test', 'production']),
+        PORT: z.preprocess(blankToUndefined, port().default(3000)),
+        // Where people reach the app, e.g. https://mail.example.com (no trailing slash). Required in production.
+        PUBLIC_ORIGIN: optionalText(),
+        // How many reverse proxies in front of the app may set X-Forwarded-For (0 = none, 1 = Caddy).
+        TRUST_PROXY: z.preprocess(blankToUndefined, z.coerce.number().int().min(0).max(3).default(0)),
+        SESSION_SECRET: text(),
+        // Encrypts stored mailbox credentials. Falls back to SESSION_SECRET outside production.
+        TOKEN_ENCRYPTION_KEY: optionalText(),
+
+        POSTGRES_HOST: text(),
+        POSTGRES_PORT: port(),
+        POSTGRES_DB: text(),
+        POSTGRES_USER: text(),
+        POSTGRES_PASSWORD: text(),
+
+        // Anyone may create an account unless this is switched off.
+        ALLOW_REGISTRATION: flag(true),
+        MICROSOFT_CLIENT_ID: optionalText(),
+        MICROSOFT_CLIENT_SECRET: optionalText(),
+        // Accounts from any Microsoft tenant or personal Microsoft account by default.
+        MICROSOFT_TENANT: z.preprocess(blankToUndefined, z.string().trim().default('common')),
+        GOOGLE_CLIENT_ID: optionalText(),
+        GOOGLE_CLIENT_SECRET: optionalText(),
+        // Optional invite list for Gmail (comma-separated sign-in emails of this app's users). Empty means everyone.
+        // Useful while the Google app is unverified and only a few people can connect anyway.
+        GMAIL_ALLOWED_EMAILS: z.preprocess(
+            value => (typeof value === 'string' ? value : ''),
+            z.string().transform(value =>
+                value
+                    .split(',')
+                    .map(item => item.trim().toLowerCase())
+                    .filter(Boolean),
+            ),
+        ),
+
+        SMTP_HOST: optionalText(),
+        SMTP_PORT: z.preprocess(blankToUndefined, port().default(587)),
+        SMTP_SECURE: z.preprocess(blankToUndefined, z.enum(['true', 'false']).optional()),
+        SMTP_USER: optionalText(),
+        SMTP_PASSWORD: optionalText(),
+        SMTP_FROM: optionalText(),
+    })
+    .superRefine((value, context) => {
+        const problem = (path: string, message: string) => context.addIssue({ code: 'custom', path: [path], message });
+        // Both halves of an OAuth app registration must be present, or neither.
+        for (const prefix of ['MICROSOFT', 'GOOGLE'] as const)
+            if (!value[`${prefix}_CLIENT_ID`] !== !value[`${prefix}_CLIENT_SECRET`])
+                problem(`${prefix}_CLIENT_ID`, `Set both ${prefix}_CLIENT_ID and ${prefix}_CLIENT_SECRET, or neither.`);
+        if (value.SMTP_HOST && !value.SMTP_FROM) problem('SMTP_FROM', 'SMTP_FROM is required when SMTP_HOST is set.');
+        if (value.PUBLIC_ORIGIN) {
+            let origin: URL | undefined;
+            try {
+                origin = new URL(value.PUBLIC_ORIGIN);
+            } catch {
+                origin = undefined;
+            }
+            if (origin?.origin !== value.PUBLIC_ORIGIN)
+                problem(
+                    'PUBLIC_ORIGIN',
+                    'PUBLIC_ORIGIN must be an origin such as https://mail.example.com, without a path or trailing slash.',
+                );
+        }
+        if (value.NODE_ENV !== 'production') return;
+        if (!value.PUBLIC_ORIGIN?.startsWith('https://'))
+            problem('PUBLIC_ORIGIN', 'Production needs PUBLIC_ORIGIN set to an https:// origin.');
+        for (const name of ['SESSION_SECRET', 'TOKEN_ENCRYPTION_KEY'] as const) {
+            const secret = value[name] ?? '';
+            if (secret.length < 32 || secret.startsWith('REPLACE_'))
+                problem(name, `Production needs ${name} with at least 32 random characters.`);
+        }
+        if (value.SESSION_SECRET === value.TOKEN_ENCRYPTION_KEY)
+            problem('TOKEN_ENCRYPTION_KEY', 'TOKEN_ENCRYPTION_KEY must differ from SESSION_SECRET.');
+    });
+
+export function loadEnv(source: NodeJS.ProcessEnv) {
+    // Render provides the service's public address; use it until PUBLIC_ORIGIN is set explicitly.
+    const input = { ...source, PUBLIC_ORIGIN: source.PUBLIC_ORIGIN?.trim() || source.RENDER_EXTERNAL_URL };
+    const result = schema.safeParse(input);
+    if (!result.success) {
+        const lines = result.error.issues.map(issue => `  ${issue.path.join('.') || '(environment)'}: ${issue.message}`);
+        throw new Error(`Invalid configuration:\n${lines.join('\n')}`);
     }
-
-    return value;
+    const value = result.data;
+    return {
+        NODE_ENV: value.NODE_ENV,
+        PORT: value.PORT,
+        // Used for links in mail and OAuth redirect URIs. Falls back to localhost outside production.
+        PUBLIC_ORIGIN: value.PUBLIC_ORIGIN ?? `http://localhost:${value.PORT}`,
+        // The origin that state-changing requests must come from; null means "the host the request was sent to"
+        // (development and tests only; production always sets PUBLIC_ORIGIN).
+        EXPECTED_ORIGIN: value.PUBLIC_ORIGIN ?? null,
+        TRUST_PROXY: value.TRUST_PROXY,
+        SESSION_SECRET: value.SESSION_SECRET,
+        TOKEN_ENCRYPTION_KEY: value.TOKEN_ENCRYPTION_KEY ?? value.SESSION_SECRET,
+        POSTGRES_HOST: value.POSTGRES_HOST,
+        POSTGRES_PORT: value.POSTGRES_PORT,
+        POSTGRES_DB: value.POSTGRES_DB,
+        POSTGRES_USER: value.POSTGRES_USER,
+        POSTGRES_PASSWORD: value.POSTGRES_PASSWORD,
+        ALLOW_REGISTRATION: value.ALLOW_REGISTRATION,
+        MICROSOFT:
+            value.MICROSOFT_CLIENT_ID && value.MICROSOFT_CLIENT_SECRET
+                ? { clientId: value.MICROSOFT_CLIENT_ID, clientSecret: value.MICROSOFT_CLIENT_SECRET, tenant: value.MICROSOFT_TENANT }
+                : undefined,
+        GOOGLE:
+            value.GOOGLE_CLIENT_ID && value.GOOGLE_CLIENT_SECRET
+                ? { clientId: value.GOOGLE_CLIENT_ID, clientSecret: value.GOOGLE_CLIENT_SECRET }
+                : undefined,
+        GMAIL_ALLOWED_EMAILS: value.GMAIL_ALLOWED_EMAILS,
+        SMTP:
+            value.SMTP_HOST && value.SMTP_FROM
+                ? {
+                      host: value.SMTP_HOST,
+                      port: value.SMTP_PORT,
+                      secure: value.SMTP_SECURE ? value.SMTP_SECURE === 'true' : value.SMTP_PORT === 465,
+                      user: value.SMTP_USER,
+                      password: value.SMTP_PASSWORD,
+                      from: value.SMTP_FROM,
+                  }
+                : undefined,
+    };
 }
 
-function optional(name: string): string | undefined {
-    const value = process.env[name]?.trim();
-    return value ? value : undefined;
-}
-
-// Both halves of an OAuth app registration must be present, or neither.
-function oauthApp(prefix: string): { clientId: string; clientSecret: string } | undefined {
-    const clientId = optional(`${prefix}_CLIENT_ID`);
-    const clientSecret = optional(`${prefix}_CLIENT_SECRET`);
-    if (!clientId && !clientSecret) return undefined;
-    if (!clientId || !clientSecret) throw new Error(`Set both ${prefix}_CLIENT_ID and ${prefix}_CLIENT_SECRET, or neither.`);
-    return { clientId, clientSecret };
-}
-
-// Render provides the service's public address; use it until PUBLIC_ORIGIN is set explicitly.
-if (!process.env.PUBLIC_ORIGIN?.trim() && process.env.RENDER_EXTERNAL_URL) process.env.PUBLIC_ORIGIN = process.env.RENDER_EXTERNAL_URL;
-
-const port = Number(process.env.PORT || 3000);
-const postgresPort = Number(required('POSTGRES_PORT'));
-const nodeEnv = required('NODE_ENV');
-if (!['development', 'test', 'production'].includes(nodeEnv)) throw new Error('NODE_ENV must be development, test or production');
-if (nodeEnv === 'production') {
-    if ([required('SESSION_SECRET'), required('TOKEN_ENCRYPTION_KEY')].some(value => value.length < 32 || value.startsWith('REPLACE_')))
-        throw new Error('Production session and encryption secrets must each contain at least 32 characters');
-    const origin = new URL(required('PUBLIC_ORIGIN'));
-    if (origin.protocol !== 'https:' || origin.origin !== process.env.PUBLIC_ORIGIN)
-        throw new Error('PUBLIC_ORIGIN must be an HTTPS origin without a trailing slash');
-}
-
-if (!Number.isInteger(postgresPort) || postgresPort < 1 || postgresPort > 65535) {
-    throw new Error('POSTGRES_PORT must be an integer between 1 and 65535');
-}
-
-const publicOrigin = optional('PUBLIC_ORIGIN') ?? `http://localhost:${port}`;
-
-const microsoftApp = oauthApp('MICROSOFT');
-const googleApp = oauthApp('GOOGLE');
-
-const smtpHost = optional('SMTP_HOST');
-const smtpPort = Number(optional('SMTP_PORT') ?? 587);
-if (smtpHost && (!Number.isInteger(smtpPort) || smtpPort < 1 || smtpPort > 65535))
-    throw new Error('SMTP_PORT must be an integer between 1 and 65535');
-
-export const env = {
-    POSTGRES_HOST: required('POSTGRES_HOST'),
-    POSTGRES_PORT: postgresPort,
-    POSTGRES_DB: required('POSTGRES_DB'),
-    POSTGRES_USER: required('POSTGRES_USER'),
-    POSTGRES_PASSWORD: required('POSTGRES_PASSWORD'),
-    NODE_ENV: nodeEnv,
-    TOKEN_ENCRYPTION_KEY: process.env.TOKEN_ENCRYPTION_KEY || required('SESSION_SECRET'),
-    SESSION_SECRET: required('SESSION_SECRET'),
-    PUBLIC_ORIGIN: publicOrigin,
-    // Anyone may create an account unless this is switched off.
-    ALLOW_REGISTRATION: process.env.ALLOW_REGISTRATION?.trim().toLowerCase() !== 'false',
-    // Accounts from any Microsoft tenant or personal Microsoft account by default.
-    MICROSOFT: microsoftApp ? { ...microsoftApp, tenant: optional('MICROSOFT_TENANT') ?? 'common' } : undefined,
-    GOOGLE: googleApp,
-    // Optional invite list for Gmail (comma-separated sign-in emails of this app's users). Empty means everyone.
-    // Useful while the Google app is unverified and only a few people can connect anyway.
-    GMAIL_ALLOWED_EMAILS: (optional('GMAIL_ALLOWED_EMAILS') ?? '')
-        .split(',')
-        .map(item => item.trim().toLowerCase())
-        .filter(Boolean),
-    SMTP: smtpHost
-        ? {
-              host: smtpHost,
-              port: smtpPort,
-              secure: optional('SMTP_SECURE') ? optional('SMTP_SECURE') === 'true' : smtpPort === 465,
-              user: optional('SMTP_USER'),
-              password: optional('SMTP_PASSWORD'),
-              from: required('SMTP_FROM'),
-          }
-        : undefined,
-} as const;
-export type Env = typeof env;
+export type Env = ReturnType<typeof loadEnv>;
+export const env: Env = loadEnv(process.env);

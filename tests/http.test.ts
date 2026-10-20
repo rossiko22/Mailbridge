@@ -14,24 +14,50 @@ test('downloads are read whole when they fit', async () => {
 });
 test('a download is refused when its declared size is over the limit', async () => {
     let cancelled = false;
-    const body = new ReadableStream({ cancel() { cancelled = true; } });
+    const body = new ReadableStream({
+        cancel() {
+            cancelled = true;
+        },
+    });
     await assert.rejects(readDownload(new Response(body, { headers: { 'Content-Length': '11' } }), 10), tooLarge);
     assert.equal(cancelled, true);
 });
 test('a download without a declared size is cut off once it passes the limit', async () => {
     let sent = 0;
-    const endless = new ReadableStream<Uint8Array>({ pull(controller) { sent++; controller.enqueue(new Uint8Array(4)); } });
+    const endless = new ReadableStream<Uint8Array>({
+        pull(controller) {
+            sent++;
+            controller.enqueue(new Uint8Array(4));
+        },
+    });
     await assert.rejects(readDownload(new Response(endless), 10), tooLarge);
     assert.ok(sent < 10, 'reading stopped soon after the limit');
 });
 
 function handle(error: unknown) {
     const result = { status: 0, body: undefined as unknown };
-    const response = { headersSent: false, locals: {}, status(code: number) { result.status = code; return response; }, json(body: unknown) { result.body = body; return response; } };
+    const response = {
+        headersSent: false,
+        locals: {},
+        status(code: number) {
+            result.status = code;
+            return response;
+        },
+        json(body: unknown) {
+            result.body = body;
+            return response;
+        },
+    };
     const logged: string[] = [];
     const original = console.error;
-    console.error = (text: string) => { logged.push(text); };
-    try { errorMiddleware(error, {} as Request, response as unknown as Response, () => {}); } finally { console.error = original; }
+    console.error = (text: string) => {
+        logged.push(text);
+    };
+    try {
+        errorMiddleware(error, {} as Request, response as unknown as Response, () => {});
+    } finally {
+        console.error = original;
+    }
     return { ...result, logged };
 }
 test('errors written for people pass through; everything else is hidden and logged without detail', () => {
@@ -50,7 +76,8 @@ test('stored credentials cannot be read with another key or after tampering', ()
     assert.notEqual(tokenVault('secret-one', 'account-1').encrypt('refresh-token'), sealed, 'each encryption uses a fresh nonce');
     assert.throws(() => tokenVault('secret-two', 'account-1').decrypt(sealed));
     const [iv, tag, data] = sealed.split('.') as [string, string, string];
-    const flipped = Buffer.from(data, 'base64'); flipped[0] = flipped[0]! ^ 1;
+    const flipped = Buffer.from(data, 'base64');
+    flipped[0] = flipped[0]! ^ 1;
     assert.throws(() => tokenVault('secret-one', 'account-1').decrypt([iv, tag, flipped.toString('base64')].join('.')));
     assert.throws(() => tokenVault('secret-one', 'account-1').decrypt('garbage'));
 });

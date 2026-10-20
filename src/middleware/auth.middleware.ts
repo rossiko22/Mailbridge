@@ -1,6 +1,6 @@
-import type * as repository from "../modules/users/users.repository.js";
-import type { NextFunction, Request, Response } from "express";
-import { toSafeUser } from "../modules/users/users.types.js";
+import type * as repository from '../modules/users/users.repository.js';
+import type { NextFunction, Request, Response } from 'express';
+import { toSafeUser } from '../modules/users/users.types.js';
 
 type UserRepository = typeof repository;
 
@@ -8,17 +8,13 @@ type UserRepository = typeof repository;
 export const MAX_SESSION_AGE = 7 * 24 * 60 * 60 * 1000;
 
 export function createAuthMiddleware(userRepository: UserRepository, now: () => number = Date.now) {
-    async function requireAuth(
-        req: Request,
-        res: Response,
-        next: NextFunction
-    ): Promise<void> {
+    async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
         try {
             const userId = req.session.userId;
 
             if (!userId) {
                 res.status(401).json({
-                    message: "Authentication required",
+                    message: 'Authentication required',
                 });
                 return;
             }
@@ -26,7 +22,7 @@ export function createAuthMiddleware(userRepository: UserRepository, now: () => 
             req.session.signedInAt ??= now();
             if (now() - req.session.signedInAt > MAX_SESSION_AGE) {
                 await new Promise<void>(resolve => req.session.destroy(() => resolve()));
-                res.status(401).json({ message: "Authentication required" });
+                res.status(401).json({ message: 'Authentication required' });
                 return;
             }
 
@@ -34,8 +30,8 @@ export function createAuthMiddleware(userRepository: UserRepository, now: () => 
 
             if (!user?.isActive) {
                 res.status(401).json({
-                    message: "Authentication required",
-                })
+                    message: 'Authentication required',
+                });
                 return;
             }
 
@@ -49,5 +45,5 @@ export function createAuthMiddleware(userRepository: UserRepository, now: () => 
 
     return {
         requireAuth,
-    }
+    };
 }

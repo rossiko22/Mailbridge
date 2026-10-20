@@ -1,67 +1,67 @@
 {
-  "name": "mailbridge",
-  "version": "1.0.0",
-  "description": "A unified mail client: connect Outlook and Gmail mailboxes and read them together, with each mailbox listed separately on the side.",
-  "main": "dist/server.js",
-  "scripts": {
-    "start backend": "tsx watch --include .env src/server.ts",
-    "migration": "tsx src/scripts/migrate.ts",
-    "seed": "tsx src/scripts/seed-development.ts",
-    "test": "node --import tsx --test tests/*.test.ts",
-    "test:integration": "node --import tsx --test --test-concurrency=1 tests/integration/*.test.ts",
-    "test:e2e": "node --import tsx --test --test-concurrency=1 --test-timeout=60000 tests/e2e/*.test.ts",
-    "test:coverage": "node --import tsx --test --test-concurrency=1 --experimental-test-coverage --test-coverage-include='src/**' --test-coverage-exclude='src/scripts/**' --test-coverage-lines=90 --test-coverage-branches=75 --test-coverage-functions=85 tests/*.test.ts tests/integration/*.test.ts",
-    "test:all": "npm test && npm run test:integration && npm run test:e2e",
-    "dev": "tsx watch --include .env src/server.ts",
-    "build": "tsc",
-    "start": "node dist/server.js",
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
-    "check": "npm run lint && npm run typecheck && npm test && npm run build",
-    "migration:prod": "node dist/scripts/migrate.js",
-    "start:render": "node dist/scripts/migrate.js && node dist/server.js",
-    "admin:reset-password": "node dist/scripts/reset-password.js",
-    "lint": "biome check .",
-    "lint:fix": "biome check --write ."
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/rossiko22/Mailbridge.git"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "module",
-  "bugs": {
-    "url": "https://github.com/rossiko22/Mailbridge/issues"
-  },
-  "homepage": "https://github.com/rossiko22/Mailbridge#readme",
-  "devDependencies": {
-    "@biomejs/biome": "2.5.15",
-    "@types/argon2": "^0.14.1",
-    "@types/connect-pg-simple": "^7.0.3",
-    "@types/express": "^5.0.6",
-    "@types/express-session": "^1.19.0",
-    "@types/node": "^26.6.4",
-    "@types/nodemailer": "^8.0.2",
-    "@types/pg": "^8.23.1",
-    "@types/sanitize-html": "^2.16.2",
-    "playwright": "^1.64.0",
-    "tsx": "^4.23.15",
-    "typescript": "^7.0.2"
-  },
-  "dependencies": {
-    "@azure/msal-node": "^7.0.1",
-    "argon2": "^0.45.1",
-    "connect-pg-simple": "^10.0.0",
-    "dotenv": "^18.0.5",
-    "express": "^5.2.1",
-    "express-session": "^1.19.0",
-    "node-pg-migrate": "^9.0.0",
-    "nodemailer": "^10.1.0",
-    "pg": "^8.23.1",
-    "sanitize-html": "^2.18.0"
-  },
-  "engines": {
-    "node": ">=24.0.0"
-  }
+    "name": "mailbridge",
+    "version": "1.0.0",
+    "description": "A unified mail client: connect Outlook and Gmail mailboxes and read them together, with each mailbox listed separately on the side.",
+    "main": "dist/server.js",
+    "scripts": {
+        "start backend": "tsx watch --include .env src/server.ts",
+        "migration": "tsx src/scripts/migrate.ts",
+        "seed": "tsx src/scripts/seed-development.ts",
+        "test": "node --import tsx --test tests/*.test.ts",
+        "test:integration": "node --import tsx --test --test-concurrency=1 tests/integration/*.test.ts",
+        "test:e2e": "node --import tsx --test --test-concurrency=1 --test-timeout=60000 tests/e2e/*.test.ts",
+        "test:coverage": "node --import tsx --test --test-concurrency=1 --experimental-test-coverage --test-coverage-include='src/**' --test-coverage-exclude='src/scripts/**' --test-coverage-lines=90 --test-coverage-branches=75 --test-coverage-functions=85 tests/*.test.ts tests/integration/*.test.ts",
+        "test:all": "npm test && npm run test:integration && npm run test:e2e",
+        "dev": "tsx watch --include .env src/server.ts",
+        "build": "tsc",
+        "start": "node dist/server.js",
+        "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
+        "check": "npm run lint && npm run typecheck && npm test && npm run build",
+        "migration:prod": "node dist/scripts/migrate.js",
+        "start:render": "node dist/scripts/migrate.js && node dist/server.js",
+        "admin:reset-password": "node dist/scripts/reset-password.js",
+        "lint": "biome check .",
+        "lint:fix": "biome check --write ."
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/rossiko22/Mailbridge.git"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "type": "module",
+    "bugs": {
+        "url": "https://github.com/rossiko22/Mailbridge/issues"
+    },
+    "homepage": "https://github.com/rossiko22/Mailbridge#readme",
+    "devDependencies": {
+        "@biomejs/biome": "2.5.15",
+        "@types/argon2": "^0.14.1",
+        "@types/connect-pg-simple": "^7.0.3",
+        "@types/express": "^5.0.6",
+        "@types/express-session": "^1.19.0",
+        "@types/node": "^26.6.4",
+        "@types/nodemailer": "^8.0.2",
+        "@types/pg": "^8.23.1",
+        "@types/sanitize-html": "^2.16.2",
+        "playwright": "^1.64.0",
+        "tsx": "^4.23.15",
+        "typescript": "^7.0.2"
+    },
+    "dependencies": {
+        "@azure/msal-node": "^7.0.1",
+        "argon2": "^0.45.1",
+        "connect-pg-simple": "^10.0.0",
+        "dotenv": "^18.0.5",
+        "express": "^5.2.1",
+        "express-session": "^1.19.0",
+        "node-pg-migrate": "^9.0.0",
+        "nodemailer": "^10.1.0",
+        "pg": "^8.23.1",
+        "sanitize-html": "^2.18.0"
+    },
+    "engines": {
+        "node": ">=24.0.0"
+    }
 }

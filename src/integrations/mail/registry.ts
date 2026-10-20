@@ -22,7 +22,8 @@ export function createMailRegistry(options: RegistryOptions) {
         provider: (id: ProviderId) => providers[id],
         client(account: { id: string; provider: ProviderId }): MailClient {
             const provider = providers[account.provider];
-            if (!provider) throw new MailError(503, `${account.provider === 'gmail' ? 'Gmail' : 'Outlook'} is not configured on this server.`);
+            if (!provider)
+                throw new MailError(503, `${account.provider === 'gmail' ? 'Gmail' : 'Outlook'} is not configured on this server.`);
             return provider.client(account.id);
         },
     };

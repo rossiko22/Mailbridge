@@ -29,7 +29,10 @@ afterEach(async () => {
     // A blocked script, a Content-Security-Policy violation or an uncaught error fails the test that caused it.
     assert.deepEqual(problems, []);
 });
-after(async () => { await browser?.close(); await app?.close(); });
+after(async () => {
+    await browser?.close();
+    await app?.close();
+});
 
 async function newPage(viewport: { width: number; height: number }, colorScheme: 'light' | 'dark' = 'light') {
     await context?.close();
@@ -38,8 +41,12 @@ async function newPage(viewport: { width: number; height: number }, colorScheme:
     page = await context.newPage();
     problems = [];
     page.on('pageerror', error => problems.push(`page error: ${error.message}`));
-    page.on('console', message => { if (message.type() === 'error' && !/status of 40[01]/.test(message.text())) problems.push(`console: ${message.text()}`); });
-    page.on('response', response => { if (response.status() >= 500) problems.push(`${response.status()} ${response.url()}`); });
+    page.on('console', message => {
+        if (message.type() === 'error' && !/status of 40[01]/.test(message.text())) problems.push(`console: ${message.text()}`);
+    });
+    page.on('response', response => {
+        if (response.status() >= 500) problems.push(`${response.status()} ${response.url()}`);
+    });
 }
 async function signIn(password = DEMO_PASSWORD) {
     await page.goto('/');
@@ -52,7 +59,9 @@ async function openInbox() {
     await page.waitForURL('**/app.html');
     await page.waitForSelector('#message-list .msg');
 }
-const shot = async (name: string) => { if (shots) await page.screenshot({ path: `${shots}/${name}.png` }); };
+const shot = async (name: string) => {
+    if (shots) await page.screenshot({ path: `${shots}/${name}.png` });
+};
 const rows = () => page.locator('#message-list .msg');
 
 test('signing in opens the combined inbox with every mailbox', async () => {
@@ -70,7 +79,7 @@ test('signing in opens the combined inbox with every mailbox', async () => {
 test('a wrong password shows an error and keeps the person on the sign-in page', async () => {
     await signIn('not-the-password');
     await page.waitForSelector('#form-message:not([hidden])');
-    assert.match(await page.textContent('#form-message') ?? '', /Invalid email or password/);
+    assert.match((await page.textContent('#form-message')) ?? '', /Invalid email or password/);
     assert.ok(page.url().endsWith('/'));
 });
 test('a signed-out visitor is sent from the app to the sign-in page', async () => {
@@ -81,7 +90,7 @@ test('a signed-out visitor is sent from the app to the sign-in page', async () =
 test('opening a message shows it in a script-free frame and marks it read', async () => {
     await openInbox();
     const first = rows().first();
-    assert.match(await first.getAttribute('class') ?? '', /msg--unread/);
+    assert.match((await first.getAttribute('class')) ?? '', /msg--unread/);
     await first.click();
     assert.equal(await page.textContent('.reader-subject'), 'Q4 roadmap review — slides attached');
     const frame = page.locator('.reader-frame iframe');
@@ -99,12 +108,12 @@ test('the list can be narrowed to one mailbox, to unread mail and by search', as
     await page.click('[data-filter="all"]');
     await page.locator('#account-list .nav-item--account').nth(1).click();
     await page.waitForFunction(() => document.querySelectorAll('#message-list .msg').length === 6);
-    assert.match(await page.textContent('#list-title') ?? '', /demo\.personal@gmail\.example|Personal/);
+    assert.match((await page.textContent('#list-title')) ?? '', /demo\.personal@gmail\.example|Personal/);
 
     await page.click('[data-nav="all"]');
     await page.fill('#search-input', 'boarding');
     await page.waitForFunction(() => document.querySelectorAll('#message-list .msg').length === 1);
-    assert.match(await rows().first().textContent() ?? '', /boarding pass/);
+    assert.match((await rows().first().textContent()) ?? '', /boarding pass/);
 });
 test('the dark theme is remembered across pages', async () => {
     await openInbox();
@@ -122,7 +131,10 @@ test('a theme saved under the old app name is kept and moved to the new name', a
     await page.evaluate(() => localStorage.setItem('ticket-mail-theme', 'dark'));
     await page.reload();
     assert.equal(await page.getAttribute('html', 'data-theme'), 'dark');
-    assert.deepEqual(await page.evaluate(() => [localStorage.getItem('mailbridge-theme'), localStorage.getItem('ticket-mail-theme')]), ['dark', null]);
+    assert.deepEqual(await page.evaluate(() => [localStorage.getItem('mailbridge-theme'), localStorage.getItem('ticket-mail-theme')]), [
+        'dark',
+        null,
+    ]);
 });
 test('settings list the connected accounts and recent activity', async () => {
     await openInbox();
@@ -130,7 +142,7 @@ test('settings list the connected accounts and recent activity', async () => {
     await page.getByText('demo.work@outlook.example').first().waitFor();
     await page.getByText('demo.personal@gmail.example').first().waitFor();
     await page.locator('#activity-list').getByText('Signed in').first().waitFor();
-    assert.match(await page.locator('#activity-list .account-row small').first().textContent() ?? '', /Chrome on \w+ · 127\.0\.0\.1/);
+    assert.match((await page.locator('#activity-list .account-row small').first().textContent()) ?? '', /Chrome on \w+ · 127\.0\.0\.1/);
     await shot('settings');
     const saved = await app.pool.query('SELECT count(*)::int AS n FROM mail_accounts');
     assert.equal(saved.rows[0].n, 2);

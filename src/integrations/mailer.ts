@@ -1,7 +1,16 @@
 import nodemailer from 'nodemailer';
 
-export interface SmtpConfig { host: string; port: number; secure: boolean; user: string | undefined; password: string | undefined; from: string }
-export interface Mailer { sendPasswordReset(to: string, link: string, minutes: number): Promise<void> }
+export interface SmtpConfig {
+    host: string;
+    port: number;
+    secure: boolean;
+    user: string | undefined;
+    password: string | undefined;
+    from: string;
+}
+export interface Mailer {
+    sendPasswordReset(to: string, link: string, minutes: number): Promise<void>;
+}
 
 const text = (link: string, minutes: number) => `Someone asked to reset the password for this email address.
 
@@ -26,12 +35,20 @@ export function createMailer(smtp: SmtpConfig | undefined, nodeEnv: string, log:
         };
     }
     const transport = nodemailer.createTransport({
-        host: smtp.host, port: smtp.port, secure: smtp.secure,
+        host: smtp.host,
+        port: smtp.port,
+        secure: smtp.secure,
         ...(smtp.user ? { auth: { user: smtp.user, pass: smtp.password ?? '' } } : {}),
     });
     return {
         async sendPasswordReset(to, link, minutes) {
-            await transport.sendMail({ from: smtp.from, to, subject: 'Reset your password', text: text(link, minutes), html: html(link, minutes) });
+            await transport.sendMail({
+                from: smtp.from,
+                to,
+                subject: 'Reset your password',
+                text: text(link, minutes),
+                html: html(link, minutes),
+            });
         },
     };
 }

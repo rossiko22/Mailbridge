@@ -6,14 +6,7 @@
         "useIgnoreFile": true
     },
     "files": {
-        "includes": [
-            "**",
-            "!**/dist",
-            "!**/coverage",
-            "!**/test-results",
-            "!**/playwright-report",
-            "!**/package-lock.json"
-        ]
+        "includes": ["**", "!**/dist", "!**/coverage", "!**/test-results", "!**/playwright-report", "!**/package-lock.json"]
     },
     "formatter": {
         "enabled": true,
@@ -67,17 +60,13 @@
     },
     "overrides": [
         {
-            "includes": [
-                "public/**"
-            ],
+            "includes": ["public/**"],
             "formatter": {
                 "indentWidth": 2
             }
         },
         {
-            "includes": [
-                "public/css/**"
-            ],
+            "includes": ["public/css/**"],
             "linter": {
                 "rules": {
                     "complexity": {
@@ -93,9 +82,7 @@
             }
         },
         {
-            "includes": [
-                "public/assets/icons.svg"
-            ],
+            "includes": ["public/assets/icons.svg"],
             "linter": {
                 "enabled": false
             }

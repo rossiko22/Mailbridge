@@ -6,12 +6,28 @@ import { DEMO_EMAIL, DEMO_PASSWORD, seedDemoData } from '../../src/scripts/demo-
 import { createClient, register, startApp, type TestApp, type TestClient } from '../support/harness.js';
 
 let app: TestApp;
-before(async () => { app = await startApp(); });
+before(async () => {
+    app = await startApp();
+});
 beforeEach(() => app.reset());
 after(() => app.close());
 
-interface Account { id: string; provider: string; email: string; total: number; unread: number; isDemo: boolean; needsReconnect: boolean; lastError: string | null }
-interface Mail { id: string; accountId: string; subject: string; isRead: boolean }
+interface Account {
+    id: string;
+    provider: string;
+    email: string;
+    total: number;
+    unread: number;
+    isDemo: boolean;
+    needsReconnect: boolean;
+    lastError: string | null;
+}
+interface Mail {
+    id: string;
+    accountId: string;
+    subject: string;
+    isRead: boolean;
+}
 
 async function demo() {
     await seedDemoData(app.pool);
@@ -19,26 +35,52 @@ async function demo() {
     assert.equal((await client.post('/auth/login', { email: DEMO_EMAIL, password: DEMO_PASSWORD })).status, 200);
     return client;
 }
-const accountsOf = async (client: TestClient) => (await (await client.get('/accounts')).json() as { accounts: Account[]; providers: Record<string, boolean> });
-const mailOf = async (client: TestClient, query = '') => (await (await client.get(`/emails${query}`)).json() as { emails: Mail[]; hasMore: boolean });
+const accountsOf = async (client: TestClient) =>
+    (await (await client.get('/accounts')).json()) as { accounts: Account[]; providers: Record<string, boolean> };
+const mailOf = async (client: TestClient, query = '') =>
+    (await (await client.get(`/emails${query}`)).json()) as { emails: Mail[]; hasMore: boolean };
 
 // A Gmail account whose stored sign-in is still valid, so no token refresh is needed.
 async function connectGmail(userId: string, email = 'real@gmail.example') {
     const accounts = createAccountsRepository(app.pool, app.env.TOKEN_ENCRYPTION_KEY);
-    const saved = await accounts.upsertConnected(userId, 'gmail', email, 'Real', JSON.stringify({ refreshToken: 'refresh-secret', accessToken: 'access-secret', expiresAt: Date.now() + 3_600_000 }));
+    const saved = await accounts.upsertConnected(
+        userId,
+        'gmail',
+        email,
+        'Real',
+        JSON.stringify({ refreshToken: 'refresh-secret', accessToken: 'access-secret', expiresAt: Date.now() + 3_600_000 }),
+    );
     return saved.id;
 }
-const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+const json = (body: unknown, status = 200) =>
+    new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 const gmailMessage = (id: string, labels = ['INBOX', 'UNREAD']) => ({
-    id, threadId: `t-${id}`, labelIds: labels, snippet: `Preview of ${id}`, internalDate: String(Date.now()),
-    payload: { mimeType: 'text/plain', headers: [{ name: 'Subject', value: `Subject ${id}` }, { name: 'From', value: 'Ann <ann@example.com>' }, { name: 'Message-ID', value: `<${id}@mail.example>` }],
-        body: { data: Buffer.from(`Body of ${id}`).toString('base64url') } },
+    id,
+    threadId: `t-${id}`,
+    labelIds: labels,
+    snippet: `Preview of ${id}`,
+    internalDate: String(Date.now()),
+    payload: {
+        mimeType: 'text/plain',
+        headers: [
+            { name: 'Subject', value: `Subject ${id}` },
+            { name: 'From', value: 'Ann <ann@example.com>' },
+            { name: 'Message-ID', value: `<${id}@mail.example>` },
+        ],
+        body: { data: Buffer.from(`Body of ${id}`).toString('base64url') },
+    },
 });
 
 test('the combined inbox lists every mailbox and can be filtered, searched and sorted', async () => {
     const client = await demo();
     const { accounts, providers } = await accountsOf(client);
-    assert.deepEqual(accounts.map(item => [item.provider, item.total, item.unread, item.isDemo]), [['outlook', 7, 3, true], ['gmail', 6, 3, true]]);
+    assert.deepEqual(
+        accounts.map(item => [item.provider, item.total, item.unread, item.isDemo]),
+        [
+            ['outlook', 7, 3, true],
+            ['gmail', 6, 3, true],
+        ],
+    );
     assert.deepEqual(providers, { outlook: false, gmail: true });
 
     const all = await mailOf(client);
@@ -51,13 +93,16 @@ test('the combined inbox lists every mailbox and can be filtered, searched and s
     const onlyGmail = await mailOf(client, `?account=${gmail.id}`);
     assert.equal(onlyGmail.emails.length, 6);
     assert.ok(onlyGmail.emails.every(item => item.accountId === gmail.id));
-    assert.deepEqual((await mailOf(client, '?search=BOARDING')).emails.map(item => item.subject), ['Your boarding pass for flight NW 214']);
+    assert.deepEqual(
+        (await mailOf(client, '?search=BOARDING')).emails.map(item => item.subject),
+        ['Your boarding pass for flight NW 214'],
+    );
     assert.equal((await mailOf(client, '?search=%25')).emails.length, 0, 'search text is matched literally, not as a pattern');
 });
 test('a message opens in a sandboxed frame, exports as .eml and can be marked read', async () => {
     const client = await demo();
     const target = (await mailOf(client, '?search=roadmap')).emails[0]!;
-    const detail = await (await client.get(`/emails/${target.id}`)).json() as { email: Record<string, unknown> };
+    const detail = (await (await client.get(`/emails/${target.id}`)).json()) as { email: Record<string, unknown> };
     assert.equal(detail.email.senderAddress, 'priya.nair@contoso.example');
     assert.ok(!('providerId' in detail.email));
 
@@ -83,14 +128,20 @@ test('demo mailboxes are read-only: nothing is sent or synced', async () => {
     const target = (await mailOf(client)).emails[0]!;
     assert.deepEqual(await (await client.post(`/accounts/${accounts[0]!.id}/sync`)).json(), { processed: 0, removed: 0, hasMore: false });
     const reply = await client.post(`/emails/${target.id}/send`, { action: 'reply', requestId: randomUUID(), comment: 'Hello' });
-    const compose = await client.post('/emails/compose', { accountId: accounts[0]!.id, requestId: randomUUID(), subject: 'Hi', body: 'Text', to: ['a@example.com'] });
+    const compose = await client.post('/emails/compose', {
+        accountId: accounts[0]!.id,
+        requestId: randomUUID(),
+        subject: 'Hi',
+        body: 'Text',
+        to: ['a@example.com'],
+    });
     for (const response of [reply, compose]) {
         assert.equal(response.status, 400);
-        assert.match((await response.json() as { message: string }).message, /demo mailbox/);
+        assert.match(((await response.json()) as { message: string }).message, /demo mailbox/);
     }
     assert.equal((await app.pool.query('SELECT 1 FROM outgoing_messages')).rowCount, 0);
 });
-test('one person can never read or change another person\'s mail or accounts', async () => {
+test("one person can never read or change another person's mail or accounts", async () => {
     const owner = await demo();
     const { accounts } = await accountsOf(owner);
     const target = (await mailOf(owner)).emails[0]!;
@@ -99,10 +150,25 @@ test('one person can never read or change another person\'s mail or accounts', a
     assert.deepEqual(await mailOf(intruder), { emails: [], hasMore: false });
     assert.deepEqual((await accountsOf(intruder)).accounts, []);
     assert.equal((await mailOf(intruder, `?account=${accounts[0]!.id}`)).emails.length, 0);
-    for (const path of ['', '/body', '/export', '/attachments']) assert.equal((await intruder.get(`/emails/${target.id}${path}`)).status, 404, path);
+    for (const path of ['', '/body', '/export', '/attachments'])
+        assert.equal((await intruder.get(`/emails/${target.id}${path}`)).status, 404, path);
     assert.equal((await intruder.patch(`/emails/${target.id}/read`, { isRead: true })).status, 404);
-    assert.equal((await intruder.post(`/emails/${target.id}/send`, { action: 'reply', requestId: randomUUID(), comment: 'Hello' })).status, 404);
-    assert.equal((await intruder.post('/emails/compose', { accountId: accounts[0]!.id, requestId: randomUUID(), subject: 'Hi', body: 'Text', to: ['a@example.com'] })).status, 404);
+    assert.equal(
+        (await intruder.post(`/emails/${target.id}/send`, { action: 'reply', requestId: randomUUID(), comment: 'Hello' })).status,
+        404,
+    );
+    assert.equal(
+        (
+            await intruder.post('/emails/compose', {
+                accountId: accounts[0]!.id,
+                requestId: randomUUID(),
+                subject: 'Hi',
+                body: 'Text',
+                to: ['a@example.com'],
+            })
+        ).status,
+        404,
+    );
     assert.equal((await intruder.post(`/accounts/${accounts[0]!.id}/sync`)).status, 404);
     assert.equal((await intruder.delete(`/accounts/${accounts[0]!.id}`)).status, 404);
 
@@ -120,8 +186,14 @@ test('compose and reply input is validated before anything is stored', async () 
     const client = await demo();
     const { accounts } = await accountsOf(client);
     const valid = { accountId: accounts[0]!.id, requestId: randomUUID(), subject: 'Hi', body: 'Text', to: ['a@example.com'] };
-    for (const change of [{ to: [] }, { to: ['not-an-address'] }, { subject: 'Injected\r\nBcc: x@example.com' }, { requestId: 'nope' }, { body: '   ' },
-        { to: Array.from({ length: 21 }, (_item, index) => `p${index}@example.com`) }]) {
+    for (const change of [
+        { to: [] },
+        { to: ['not-an-address'] },
+        { subject: 'Injected\r\nBcc: x@example.com' },
+        { requestId: 'nope' },
+        { body: '   ' },
+        { to: Array.from({ length: 21 }, (_item, index) => `p${index}@example.com`) },
+    ]) {
         assert.equal((await client.post('/emails/compose', { ...valid, ...change })).status, 400, JSON.stringify(change).slice(0, 60));
     }
 });
@@ -148,7 +220,10 @@ test('connecting Gmail starts an OAuth flow with PKCE and a single-use state', a
 test('a declined consent screen and an unconfigured provider end with a clear outcome', async () => {
     const { client } = await register(app, 'person@example.com');
     const state = new URL((await client.get('/accounts/connect/gmail')).headers.get('location')!).searchParams.get('state');
-    assert.equal((await client.get(`/accounts/callback/gmail?state=${state}&error=access_denied`)).headers.get('location'), '/app.html?connect=denied');
+    assert.equal(
+        (await client.get(`/accounts/callback/gmail?state=${state}&error=access_denied`)).headers.get('location'),
+        '/app.html?connect=denied',
+    );
     assert.equal((await client.get('/accounts/connect/outlook')).headers.get('location'), '/app.html?connect=unavailable');
     assert.equal((await client.get('/accounts/connect/yahoo')).headers.get('location'), '/app.html?connect=unavailable');
 });
@@ -156,8 +231,13 @@ test('a completed Google sign-in stores the account with encrypted credentials',
     const { client } = await register(app, 'person@example.com');
     const state = new URL((await client.get('/accounts/connect/gmail')).headers.get('location')!).searchParams.get('state');
     app.setUpstream(url => {
-        if (url.hostname === 'oauth2.googleapis.com') return json({ access_token: 'access-secret', refresh_token: 'refresh-secret', expires_in: 3600,
-            scope: 'openid email profile https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.send' });
+        if (url.hostname === 'oauth2.googleapis.com')
+            return json({
+                access_token: 'access-secret',
+                refresh_token: 'refresh-secret',
+                expires_in: 3600,
+                scope: 'openid email profile https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.send',
+            });
         if (url.hostname === 'openidconnect.googleapis.com') return json({ email: 'Real@Gmail.example', name: 'Real Person' });
         return undefined;
     });
@@ -174,14 +254,26 @@ test('a completed Google sign-in stores the account with encrypted credentials',
 test('consent without every mail permission is refused', async () => {
     const { client } = await register(app, 'person@example.com');
     const state = new URL((await client.get('/accounts/connect/gmail')).headers.get('location')!).searchParams.get('state');
-    app.setUpstream(url => url.hostname === 'oauth2.googleapis.com'
-        ? json({ access_token: 'a', refresh_token: 'r', expires_in: 3600, scope: 'openid email profile https://www.googleapis.com/auth/gmail.send' }) : undefined);
+    app.setUpstream(url =>
+        url.hostname === 'oauth2.googleapis.com'
+            ? json({
+                  access_token: 'a',
+                  refresh_token: 'r',
+                  expires_in: 3600,
+                  scope: 'openid email profile https://www.googleapis.com/auth/gmail.send',
+              })
+            : undefined,
+    );
     const done = await client.get(`/accounts/callback/gmail?state=${state}&code=auth-code`);
-    assert.equal(done.headers.get('location'), '/app.html?connect=failed', 'the reason is not put in the address, where anyone could forge it');
-    const first = await (await client.get('/accounts')).json() as { accounts: Account[]; notice?: string };
+    assert.equal(
+        done.headers.get('location'),
+        '/app.html?connect=failed',
+        'the reason is not put in the address, where anyone could forge it',
+    );
+    const first = (await (await client.get('/accounts')).json()) as { accounts: Account[]; notice?: string };
     assert.match(first.notice ?? '', /^Allow every requested Gmail permission/);
     assert.equal(first.accounts.length, 0);
-    assert.ok(!('notice' in await accountsOf(client)), 'the reason is shown once');
+    assert.ok(!('notice' in (await accountsOf(client))), 'the reason is shown once');
 });
 
 test('syncing pulls the inbox, then applies later changes incrementally', async () => {
@@ -196,30 +288,44 @@ test('syncing pulls the inbox, then applies later changes incrementally', async 
         seen.push(path);
         if (path === 'profile') return json({ historyId: '100' });
         if (path === 'messages') return json({ messages: Object.keys(inbox).map(id => ({ id })) });
-        if (path === 'history') return json({ historyId: '200', history: [{ messagesAdded: [{ message: { id: 'm3' } }] }, { labelsRemoved: [{ message: { id: 'm1' } }] }, { messagesDeleted: [{ message: { id: 'm2' } }] }] });
+        if (path === 'history')
+            return json({
+                historyId: '200',
+                history: [
+                    { messagesAdded: [{ message: { id: 'm3' } }] },
+                    { labelsRemoved: [{ message: { id: 'm1' } }] },
+                    { messagesDeleted: [{ message: { id: 'm2' } }] },
+                ],
+            });
         const id = path.replace('messages/', '');
         return inbox[id] ? json(gmailMessage(id, inbox[id])) : json({}, 404);
     });
 
     assert.deepEqual(await (await client.post(`/accounts/${accountId}/sync`)).json(), { processed: 2, removed: 0, hasMore: false });
-    assert.deepEqual((await mailOf(client)).emails.map(item => [item.subject, item.isRead]).sort(), [['Subject m1', false], ['Subject m2', true]]);
+    assert.deepEqual((await mailOf(client)).emails.map(item => [item.subject, item.isRead]).sort(), [
+        ['Subject m1', false],
+        ['Subject m2', true],
+    ]);
 
     // m1 was archived, m2 deleted and m3 arrived.
     inbox = { m1: ['UNREAD'], m3: ['INBOX', 'UNREAD'] };
     seen.length = 0;
     assert.deepEqual(await (await client.post(`/accounts/${accountId}/sync`)).json(), { processed: 1, removed: 2, hasMore: false });
     assert.ok(seen[0] === 'history' && !seen.includes('messages'), 'later syncs use the history checkpoint');
-    assert.deepEqual((await mailOf(client)).emails.map(item => item.subject), ['Subject m3']);
+    assert.deepEqual(
+        (await mailOf(client)).emails.map(item => item.subject),
+        ['Subject m3'],
+    );
     const account = (await accountsOf(client)).accounts[0]!;
     assert.deepEqual([account.total, account.unread, account.lastError], [1, 1, null]);
 });
 test('a sign-in that Google rejects flags the account for reconnecting', async () => {
     const { client, user } = await register(app, 'person@example.com');
     const accountId = await connectGmail(user.userId);
-    app.setUpstream(url => url.hostname === 'gmail.googleapis.com' ? json({}, 401) : undefined);
+    app.setUpstream(url => (url.hostname === 'gmail.googleapis.com' ? json({}, 401) : undefined));
     const response = await client.post(`/accounts/${accountId}/sync`);
     assert.equal(response.status, 502);
-    assert.match((await response.json() as { message: string }).message, /Reconnect/);
+    assert.match(((await response.json()) as { message: string }).message, /Reconnect/);
     const account = (await accountsOf(client)).accounts[0]!;
     assert.equal(account.needsReconnect, true);
     assert.match(account.lastError ?? '', /Reconnect/);
@@ -227,7 +333,10 @@ test('a sign-in that Google rejects flags the account for reconnecting', async (
 test('an unreachable provider is reported without leaking internals', async () => {
     const { client, user } = await register(app, 'person@example.com');
     const accountId = await connectGmail(user.userId);
-    app.setUpstream(url => { if (url.hostname === 'gmail.googleapis.com') throw new Error('ECONNRESET at 10.0.0.7:443'); return undefined; });
+    app.setUpstream(url => {
+        if (url.hostname === 'gmail.googleapis.com') throw new Error('ECONNRESET at 10.0.0.7:443');
+        return undefined;
+    });
     const response = await client.post(`/accounts/${accountId}/sync`);
     assert.equal(response.status, 502);
     assert.deepEqual(await response.json(), { message: 'The mail provider could not be reached. Try again shortly.' });
@@ -270,17 +379,29 @@ test('a reply is threaded, recorded, and a repeated request is not sent twice', 
 
     const reused = await client.post(`/emails/${email.id}/send`, { ...request, comment: 'Different text' });
     assert.equal(reused.status, 409, 'a request ID cannot be reused for another message');
-    const detail = await (await client.get(`/emails/${email.id}`)).json() as { email: { conversation: Array<{ action: string; state: string }> } };
-    assert.deepEqual(detail.email.conversation.map(item => [item.action, item.state]), [['reply', 'accepted']]);
+    const detail = (await (await client.get(`/emails/${email.id}`)).json()) as {
+        email: { conversation: Array<{ action: string; state: string }> };
+    };
+    assert.deepEqual(
+        detail.email.conversation.map(item => [item.action, item.state]),
+        [['reply', 'accepted']],
+    );
 });
 test('when the provider fails mid-send the outcome is reported as uncertain and never retried blindly', async () => {
     const { client, user } = await register(app, 'person@example.com');
     const { accountId, sent, state } = await syncedMail(client, user.userId);
-    const message = { accountId, requestId: randomUUID(), subject: 'Hello', body: 'Text', to: ['bob@example.com'], cc: ['carol@example.com'] };
+    const message = {
+        accountId,
+        requestId: randomUUID(),
+        subject: 'Hello',
+        body: 'Text',
+        to: ['bob@example.com'],
+        cc: ['carol@example.com'],
+    };
     state.sendStatus = 503;
     const failed = await client.post('/emails/compose', message);
     assert.equal(failed.status, 502);
-    assert.match((await failed.json() as { message: string }).message, /uncertain/);
+    assert.match(((await failed.json()) as { message: string }).message, /uncertain/);
     state.sendStatus = 200;
     assert.equal((await client.post('/emails/compose', message)).status, 409);
     assert.equal(sent.length, 0);
@@ -288,7 +409,10 @@ test('when the provider fails mid-send the outcome is reported as uncertain and 
     assert.equal((await client.post('/emails/compose', { ...message, requestId: randomUUID() })).status, 202);
     assert.match(sent[0]!.raw, /^Cc: carol@example\.com$/m);
     const states = await app.pool.query('SELECT state FROM outgoing_messages ORDER BY created_at');
-    assert.deepEqual(states.rows.map(row => row.state), ['unknown', 'accepted']);
+    assert.deepEqual(
+        states.rows.map(row => row.state),
+        ['unknown', 'accepted'],
+    );
 });
 test('marking a message read is written back to the provider', async () => {
     const { client, user } = await register(app, 'person@example.com');

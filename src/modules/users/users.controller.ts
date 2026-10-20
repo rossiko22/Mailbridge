@@ -1,6 +1,6 @@
-import type {createUserService} from "./users.service.js";
-import type {Request, Response, NextFunction} from "express";
-import { MAX_AVATAR_BYTES } from "./avatar.js";
+import type { createUserService } from './users.service.js';
+import type { Request, Response, NextFunction } from 'express';
+import { MAX_AVATAR_BYTES } from './avatar.js';
 
 type UserService = ReturnType<typeof createUserService>;
 
@@ -15,35 +15,51 @@ export function createUserController(userService: UserService) {
                 return;
             }
             res.json({ user: await userService.updateDisplayName(req.currentUser!.userId, displayName) });
-        } catch (error: unknown) { next(error); }
+        } catch (error: unknown) {
+            next(error);
+        }
     }
 
     async function uploadAvatar(req: Request, res: Response, next: NextFunction): Promise<void> {
         try {
-            if (!await userService.setAvatar(req.currentUser!.userId, req.body?.image)) {
+            if (!(await userService.setAvatar(req.currentUser!.userId, req.body?.image))) {
                 res.status(400).json({ message: `Choose a PNG, JPEG or WebP image of up to ${MAX_AVATAR_BYTES / 1024} KB.` });
                 return;
             }
             res.json({ saved: true });
-        } catch (error: unknown) { next(error); }
+        } catch (error: unknown) {
+            next(error);
+        }
     }
 
     async function showAvatar(req: Request, res: Response, next: NextFunction): Promise<void> {
         try {
             const avatar = await userService.getAvatar(req.currentUser!.userId);
-            if (!avatar) { res.status(404).json({ message: 'No profile photo.' }); return; }
+            if (!avatar) {
+                res.status(404).json({ message: 'No profile photo.' });
+                return;
+            }
             // The URL carries the upload time, so the browser may keep it privately for a long while.
-            res.set({ 'Cache-Control': 'private, max-age=31536000, immutable', 'X-Content-Type-Options': 'nosniff',
-                'Content-Security-Policy': "default-src 'none'; sandbox" }).type(avatar.contentType).send(avatar.data);
-        } catch (error: unknown) { next(error); }
+            res.set({
+                'Cache-Control': 'private, max-age=31536000, immutable',
+                'X-Content-Type-Options': 'nosniff',
+                'Content-Security-Policy': "default-src 'none'; sandbox",
+            })
+                .type(avatar.contentType)
+                .send(avatar.data);
+        } catch (error: unknown) {
+            next(error);
+        }
     }
 
     async function deleteAvatar(req: Request, res: Response, next: NextFunction): Promise<void> {
         try {
             await userService.removeAvatar(req.currentUser!.userId);
             res.json({ removed: true });
-        } catch (error: unknown) { next(error); }
+        } catch (error: unknown) {
+            next(error);
+        }
     }
 
-    return { updateProfile, uploadAvatar, showAvatar, deleteAvatar }
+    return { updateProfile, uploadAvatar, showAvatar, deleteAvatar };
 }

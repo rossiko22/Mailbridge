@@ -9,26 +9,52 @@ export const securityHeaders: RequestHandler = (req, res, next) => {
     if (process.env.NODE_ENV === 'production' && req.path !== '/health') {
         const started = Date.now();
         // The session is absent on requests refused before it loads.
-        res.once('finish', () => console.log(JSON.stringify({ event: 'request', requestId, method: req.method,
-            path: req.path, status: res.statusCode, durationMs: Date.now() - started,
-            userId: (req.session as typeof req.session | undefined)?.userId, ip: req.ip })));
+        res.once('finish', () =>
+            console.log(
+                JSON.stringify({
+                    event: 'request',
+                    requestId,
+                    method: req.method,
+                    path: req.path,
+                    status: res.statusCode,
+                    durationMs: Date.now() - started,
+                    userId: (req.session as typeof req.session | undefined)?.userId,
+                    ip: req.ip,
+                }),
+            ),
+        );
     }
     res.set({
-        'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
-        'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY',
-        'Referrer-Policy': 'no-referrer', 'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
-        'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Resource-Policy': 'same-origin', 'X-Permitted-Cross-Domain-Policies': 'none',
+        'Content-Security-Policy':
+            "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+        'X-Content-Type-Options': 'nosniff',
+        'X-Frame-Options': 'DENY',
+        'Referrer-Policy': 'no-referrer',
+        'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+        'Cross-Origin-Opener-Policy': 'same-origin',
+        'Cross-Origin-Resource-Policy': 'same-origin',
+        'X-Permitted-Cross-Domain-Policies': 'none',
         'Cache-Control': 'no-store',
     });
     if (process.env.NODE_ENV === 'production') res.set('Strict-Transport-Security', 'max-age=31536000');
     next();
 };
 
-export interface ThrottleLimits { perIp?: number; perAccount?: number; perUser?: number }
+export interface ThrottleLimits {
+    perIp?: number;
+    perAccount?: number;
+    perUser?: number;
+}
 
 // Counts attempts per client address, per account when the body carries an email, and per signed-in user.
 // Keys are hashed so the table never stores addresses. Each scope keeps its own counters.
-export function throttle(pool: Pool, secret: string, scope: string, limits: ThrottleLimits, message = 'Too many attempts. Wait 15 minutes and try again.'): RequestHandler {
+export function throttle(
+    pool: Pool,
+    secret: string,
+    scope: string,
+    limits: ThrottleLimits,
+    message = 'Too many attempts. Wait 15 minutes and try again.',
+): RequestHandler {
     return async (req, res, next) => {
         try {
             const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase().slice(0, 254) : '';
@@ -39,18 +65,24 @@ export function throttle(pool: Pool, secret: string, scope: string, limits: Thro
             if (limits.perUser !== undefined && userId) identities.push([`${scope}:user:${userId}`, limits.perUser]);
             for (const [identity, limit] of identities) {
                 const key = createHmac('sha256', secret).update(identity).digest('hex');
-                const result = await pool.query(`INSERT INTO login_attempts(key,attempts,window_start) VALUES ($1,1,NOW())
+                const result = await pool.query(
+                    `INSERT INTO login_attempts(key,attempts,window_start) VALUES ($1,1,NOW())
                     ON CONFLICT (key) DO UPDATE SET
                     attempts=CASE WHEN login_attempts.window_start < NOW()-INTERVAL '15 minutes' THEN 1 ELSE login_attempts.attempts+1 END,
                     window_start=CASE WHEN login_attempts.window_start < NOW()-INTERVAL '15 minutes' THEN NOW() ELSE login_attempts.window_start END
-                    RETURNING attempts`, [key]);
+                    RETURNING attempts`,
+                    [key],
+                );
                 if (result.rows[0].attempts > limit) {
                     res.locals.throttled = true;
-                    res.set('Retry-After','900').status(429).json({ message }); return;
+                    res.set('Retry-After', '900').status(429).json({ message });
+                    return;
                 }
             }
             await pool.query("DELETE FROM login_attempts WHERE window_start < NOW()-INTERVAL '1 day'");
             next();
-        } catch (error) { next(error); }
+        } catch (error) {
+            next(error);
+        }
     };
 }

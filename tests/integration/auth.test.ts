@@ -4,7 +4,9 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { createClient, PASSWORD, register, startApp, type TestApp } from '../support/harness.js';
 
 let app: TestApp;
-before(async () => { app = await startApp(); });
+before(async () => {
+    app = await startApp();
+});
 beforeEach(() => app.reset());
 after(() => app.close());
 
@@ -19,7 +21,7 @@ test('registering signs the person in with a hardened cookie and never returns t
     assert.match(cookie, /SameSite=Lax/i);
     const body = await response.text();
     assert.ok(!/passwordHash|password_hash|argon2/.test(body));
-    const me = await (await client.get('/auth/me')).json() as { user: Record<string, unknown> };
+    const me = (await (await client.get('/auth/me')).json()) as { user: Record<string, unknown> };
     assert.equal(me.user.email, 'new@example.com');
     assert.equal(me.user.displayName, 'New Person');
     assert.ok(!('passwordHash' in me.user));
@@ -30,7 +32,10 @@ test('registration rejects bad input and a second account for the same address',
     const client = createClient(app.url);
     assert.equal((await client.post('/auth/register', { email: 'not-an-email', password: PASSWORD })).status, 400);
     assert.equal((await client.post('/auth/register', { email: 'short@example.com', password: 'too-short' })).status, 400);
-    assert.equal((await client.post('/auth/register', { email: 'name@example.com', password: PASSWORD, displayName: 'x'.repeat(81) })).status, 400);
+    assert.equal(
+        (await client.post('/auth/register', { email: 'name@example.com', password: PASSWORD, displayName: 'x'.repeat(81) })).status,
+        400,
+    );
     await register(app, 'taken@example.com');
     const duplicate = await client.post('/auth/register', { email: 'TAKEN@example.com', password: PASSWORD });
     assert.equal(duplicate.status, 409);
@@ -48,7 +53,8 @@ test('sign-in gives the same answer for a wrong password and an unknown address'
 });
 test('each sign-in gets a fresh session and signing out ends it on the server', async () => {
     await register(app, 'person@example.com');
-    const first = createClient(app.url); const second = createClient(app.url);
+    const first = createClient(app.url);
+    const second = createClient(app.url);
     await login('person@example.com', PASSWORD, first);
     await login('person@example.com', PASSWORD, second);
     assert.notEqual(first.cookies.get('session'), second.cookies.get('session'));
@@ -68,7 +74,10 @@ test('changing the password needs the current one and signs out every session', 
     const other = createClient(app.url);
     await login('person@example.com', PASSWORD, other);
 
-    assert.equal((await client.post('/auth/password', { currentPassword: 'not-the-password', newPassword: 'a-brand-new-password' })).status, 400);
+    assert.equal(
+        (await client.post('/auth/password', { currentPassword: 'not-the-password', newPassword: 'a-brand-new-password' })).status,
+        400,
+    );
     assert.equal((await client.post('/auth/password', { currentPassword: PASSWORD, newPassword: 'short' })).status, 400);
     assert.equal((await client.post('/auth/password', { currentPassword: PASSWORD, newPassword: 'a-brand-new-password' })).status, 200);
 
@@ -85,7 +94,10 @@ test('repeated failed sign-ins for one account are throttled without locking out
     assert.equal(blocked.headers.get('retry-after'), '900');
     assert.equal((await login('someone-else@example.com', 'wrong-password-123')).status, 401);
     const keys = await app.pool.query('SELECT key FROM login_attempts');
-    assert.ok(keys.rows.every(row => /^[0-9a-f]{64}$/.test(row.key)), 'throttle keys are hashed');
+    assert.ok(
+        keys.rows.every(row => /^[0-9a-f]{64}$/.test(row.key)),
+        'throttle keys are hashed',
+    );
 });
 
 // Without SMTP the reset link is written to the server log, which is where these tests read it.
@@ -96,7 +108,9 @@ async function requestReset(email: string) {
         await delay(50);
         const line = log.mock.calls.map(call => String(call.arguments[0])).find(text => text.includes('Password reset link'));
         return { response, token: line ? /#token=([\w-]+)/.exec(line)?.[1] : undefined };
-    } finally { log.mock.restore(); }
+    } finally {
+        log.mock.restore();
+    }
 }
 
 test('asking for a reset reveals nothing about whether the address has an account', async () => {
@@ -137,7 +151,11 @@ test('an expired reset link and a superseded one are both refused', async () => 
 });
 test('refusing an unknown address takes as long as refusing a wrong password', async () => {
     await register(app, 'person@example.com');
-    const time = async (email: string) => { const started = performance.now(); await login(email, 'wrong-password-123'); return performance.now() - started; };
+    const time = async (email: string) => {
+        const started = performance.now();
+        await login(email, 'wrong-password-123');
+        return performance.now() - started;
+    };
     await time('person@example.com');
     const known = Math.min(await time('person@example.com'), await time('person@example.com'));
     await time('nobody@example.com');

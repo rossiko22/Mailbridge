@@ -67,8 +67,14 @@
   --account-gray: #616161;
 
   /* Sender avatars use a fixed set so a person always keeps the same color */
-  --person-0: #0f6cbd; --person-1: #038387; --person-2: #7160e8; --person-3: #c4510b;
-  --person-4: #107c10; --person-5: #c239b3; --person-6: #986f0b; --person-7: #4f6bed;
+  --person-0: #0f6cbd;
+  --person-1: #038387;
+  --person-2: #7160e8;
+  --person-3: #c4510b;
+  --person-4: #107c10;
+  --person-5: #c239b3;
+  --person-6: #986f0b;
+  --person-7: #4f6bed;
   --on-person: #ffffff;
 
   /* Type: Segoe UI on Windows (as in Outlook), the system face elsewhere */
@@ -113,7 +119,7 @@
   --control-height-lg: 40px;
 
   /* Motion */
-  --ease: cubic-bezier(.33, 0, .67, 1);
+  --ease: cubic-bezier(0.33, 0, 0.67, 1);
   --fast: 120ms;
   --normal: 200ms;
 }
@@ -170,8 +176,14 @@
   --account-red: #f1707b;
   --account-gray: #adadad;
 
-  --person-0: #479ef5; --person-1: #26b5b9; --person-2: #a99cff; --person-3: #f0894b;
-  --person-4: #54b054; --person-5: #e57fd9; --person-6: #d9a73a; --person-7: #8f9fff;
+  --person-0: #479ef5;
+  --person-1: #26b5b9;
+  --person-2: #a99cff;
+  --person-3: #f0894b;
+  --person-4: #54b054;
+  --person-5: #e57fd9;
+  --person-6: #d9a73a;
+  --person-7: #8f9fff;
   --on-person: #1f1f1f;
 
   --shadow-menu: 0 0 2px rgb(0 0 0 / 40%), 0 8px 16px rgb(0 0 0 / 44%);

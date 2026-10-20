@@ -14,12 +14,35 @@ export interface SyncedFields {
     hasAttachments: boolean;
     isRead: boolean;
 }
-export interface SyncedMessage { id: string; removed?: boolean; fields: Partial<SyncedFields> }
-export interface SyncPage { messages: SyncedMessage[]; cursor: string; hasMore: boolean }
+export interface SyncedMessage {
+    id: string;
+    removed?: boolean;
+    fields: Partial<SyncedFields>;
+}
+export interface SyncPage {
+    messages: SyncedMessage[];
+    cursor: string;
+    hasMore: boolean;
+}
 
-export interface MailBody { contentType: 'html' | 'text'; content: string }
-export interface MailAttachment { id: string; name: string; size: number; contentType: string; cloudLink?: boolean }
-export interface NewMessage { subject: string; body: string; to: string[]; cc: string[]; bcc: string[] }
+export interface MailBody {
+    contentType: 'html' | 'text';
+    content: string;
+}
+export interface MailAttachment {
+    id: string;
+    name: string;
+    size: number;
+    contentType: string;
+    cloudLink?: boolean;
+}
+export interface NewMessage {
+    subject: string;
+    body: string;
+    to: string[];
+    cc: string[];
+    bcc: string[];
+}
 
 // What the rest of the application may ask of any connected account, whichever provider it uses.
 export interface MailClient {
@@ -34,10 +57,19 @@ export interface MailClient {
 }
 
 // A sign-in that has been started but not yet completed. Kept in the user's session.
-export interface PendingAuth { provider: ProviderId; state: string; verifier: string; expiresAt: number }
+export interface PendingAuth {
+    provider: ProviderId;
+    state: string;
+    verifier: string;
+    expiresAt: number;
+}
 
 // `credentials` is plain JSON here; the credential store encrypts it before it reaches the database.
-export interface ConnectedProfile { email: string; displayName: string; credentials: string }
+export interface ConnectedProfile {
+    email: string;
+    displayName: string;
+    credentials: string;
+}
 
 export interface MailProvider {
     begin(): Promise<{ url: string; pending: PendingAuth }>;

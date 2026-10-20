@@ -1,6 +1,6 @@
-import { fileURLToPath } from "node:url";
-import { runner } from "node-pg-migrate";
-import { env } from "../config/env.js";
+import { fileURLToPath } from 'node:url';
+import { runner } from 'node-pg-migrate';
+import { env } from '../config/env.js';
 
 async function main(): Promise<void> {
     await runner({
@@ -13,20 +13,18 @@ async function main(): Promise<void> {
             connectionTimeoutMillis: 5_000,
         },
 
-        dir: fileURLToPath(
-            new URL("../../database/migrations", import.meta.url),
-        ),
+        dir: fileURLToPath(new URL('../../database/migrations', import.meta.url)),
 
-        migrationsTable: "pgmigrations",
-        direction: "up",
+        migrationsTable: 'pgmigrations',
+        direction: 'up',
         checkOrder: true,
         singleTransaction: true,
     });
 
-    console.log("Database migrations completed.");
+    console.log('Database migrations completed.');
 }
 
 main().catch((error: unknown) => {
-    console.error("Database migration failed:", error);
+    console.error('Database migration failed:', error);
     process.exitCode = 1;
 });

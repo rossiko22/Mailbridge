@@ -90,19 +90,24 @@ flowchart LR
 - **Incremental sync.** The first sync loads the last 90 days of the inbox. After that, only changes are fetched: Graph delta links for Outlook and history IDs for Gmail. An expired checkpoint rebuilds itself.
 - **Gmail quota aware.** Gmail allows 6,000 quota units per mailbox per minute. The client budgets its requests, and when Google reports the minute is used up it waits for the next one instead of failing.
 - **Sends are never duplicated.** Every send carries a request ID that is recorded before the provider is called. A retry of an accepted request is answered from the record, and an uncertain outcome is reported as uncertain rather than retried.
+- **No database lock waits on the network.** A sync claims its account with a short lease, and token refreshes are saved with compare-and-swap, so a slow provider never ties up a database connection.
+- **Fast at any size.** The inbox pages by cursor (keyset), straight from an index in inbox order, and search uses full-text and trigram indexes. On 100,000 saved messages, a page takes under a millisecond and a search under 25 ms.
+- **One contract.** [`contracts/openapi.yaml`](contracts/openapi.yaml) describes every endpoint; requests are validated with Zod against the same rules, and every error has a stable `code`. See [docs/architecture.md](docs/architecture.md).
 
 ## Security
 
 | Area | What is done |
 | --- | --- |
 | Passwords | Argon2id (128 MiB, 3 passes). Reset tokens are single-use, expire after 30 minutes, are stored only as a hash and travel in the URL fragment. |
-| Sessions | Server-side sessions in PostgreSQL. The cookie is `HttpOnly`, `SameSite=Lax` and `Secure` in production. The session ID is replaced on sign-in, a session ends after 8 idle hours and at most 7 days after sign-in, and changing or resetting a password signs out every session. |
+| Sessions | Server-side sessions in PostgreSQL. The cookie is `HttpOnly`, `SameSite=Lax`, and in production `Secure` with the `__Host-` prefix. The session ID is replaced on sign-in, a session ends after 8 idle hours and at most 7 days after sign-in, and changing or resetting a password signs out every session. |
 | Request forgery | Every state-changing request must be same-site `application/json`; cross-site and foreign-origin requests are refused. |
 | Brute force | Sign-in, registration and reset attempts are counted per address and per account, and password changes and sends per signed-in person. An unknown address is refused as slowly as a wrong password. Counter keys are HMAC-hashed, so the table stores no email or IP addresses. |
-| OAuth | Authorization code flow with PKCE and a single-use `state`. Tokens are encrypted with AES-256-GCM and bound to their account row, and they never reach the browser. |
+| OAuth | Authorization code flow with PKCE and a single-use `state`, compared in constant time. Tokens are encrypted with AES-256-GCM, bound to their account row, and never reach the browser. The encryption key can be rotated without anyone reconnecting ([runbook](docs/runbooks/key-rotation.md)). |
+| Input | Every request body, query and path parameter is checked by a Zod schema; bodies are strict, so unknown fields are refused. |
 | Mail content | HTML is sanitized and shown in a sandboxed frame under its own Content-Security-Policy. Sync cursors are validated so a stored URL can never send a token to another host. |
 | Data isolation | Every query is scoped to the signed-in user. Another person's mail and accounts answer `404`. |
-| Audit trail | Sign-ins and failures, password changes and resets, mailbox connections, sends, downloads and refused requests are recorded with time, IP address, browser and request ID, and kept for 90 days. The log never holds mail content, recipients, passwords or tokens, and an attempt on an unknown address is stored without the address. |
+| Audit trail | Sign-ins and failures, password changes and resets, mailbox connections, sends, downloads and refused requests are recorded with time, IP address, browser and request ID, and kept for 90 days. The log never holds mail content, recipients, passwords or tokens, and an attempt on an unknown address is stored without the address. The database itself refuses to change or truncate audit rows, and the app can run as a role that cannot switch that guard off ([`deploy/db-roles.sql`](deploy/db-roles.sql)). |
+| Logs | One JSON line per request with a request ID, path (never the query string), status, user and client IP. Cookies, passwords and tokens are redacted, and error messages are never logged. |
 | Headers | Strict Content-Security-Policy, `X-Frame-Options: DENY`, `nosniff`, `no-referrer`, and HSTS in production. |
 | Container | Runs as a non-root user on a read-only filesystem with all capabilities dropped. |
 
@@ -150,7 +155,10 @@ All settings are environment variables; see [.env-example](.env-example) for dev
 | Variable | Purpose |
 | --- | --- |
 | `PUBLIC_ORIGIN` | Public address of the app. Required in production, where it must be HTTPS. |
-| `SESSION_SECRET`, `TOKEN_ENCRYPTION_KEY` | Sign sessions and encrypt stored mailbox credentials. At least 32 characters each in production. |
+| `SESSION_SECRET`, `TOKEN_ENCRYPTION_KEY` | Sign sessions and encrypt stored mailbox credentials. At least 32 characters each and different from each other in production. |
+| `TOKEN_ENCRYPTION_KEY_PREVIOUS` | Only while rotating the encryption key; see [the runbook](docs/runbooks/key-rotation.md). |
+| `TRUST_PROXY` | How many reverse proxies may set `X-Forwarded-For` (`1` behind Caddy). Decides the client IP used by throttling, logs and the audit trail. |
+| `LOG_LEVEL` | `info` by default; `debug`, `warn`, `error` or `silent`. |
 | `ALLOW_REGISTRATION` | Set to `false` to stop new sign-ups. |
 | `MICROSOFT_*`, `GOOGLE_*` | OAuth app credentials. A provider without them is simply not offered. |
 | `GMAIL_ALLOWED_EMAILS` | Optional invite list for the Gmail option. |
@@ -160,53 +168,51 @@ All settings are environment variables; see [.env-example](.env-example) for dev
 
 ## Testing
 
-The suite has three layers, all on Node's built-in test runner with no extra test framework.
+Everything runs on Node's built-in test runner with no extra test framework.
 
 | Layer | Command | Needs | What it covers |
 | --- | --- | --- | --- |
-| Unit | `npm test` | nothing | Gmail and Outlook clients against recorded responses, quota budgeting and backoff, cursor validation, MIME handling, HTML sanitizing, credential encryption, validation rules |
-| Integration | `npm run test:integration` | PostgreSQL | The real app over HTTP against a real database: registration, sign-in, sessions, throttling, password reset, request-forgery checks, security headers, data isolation between users, the OAuth flow, sync, send idempotency, and the audit trail |
-| Browser | `npm run test:e2e` | PostgreSQL, Chromium | Sign-in, the inbox, opening a message, filters and search, themes, settings, sign-out and the phone layout. Any console error or Content-Security-Policy violation fails the test |
+| Unit | `npm test` | nothing | Gmail and Outlook clients against recorded responses, quota budgeting, cursor validation, MIME handling, HTML sanitizing, credential encryption and key rotation, validation rules, configuration rules |
+| Integration | `npm run test:integration` | PostgreSQL | The real app over HTTP against a real database. Driven by the contract: every endpoint answers `401` without a session, `404` for another person's data and `400` with the failing fields for invalid input. Also sessions, throttling, password reset, OAuth, sync leases, send idempotency, search, paging, logs, the audit guard and the least-privilege database role |
+| Browser | `npm run test:e2e` and `npm run test:e2e:firefox` | PostgreSQL, Chromium/Firefox | Sign-in, the inbox, reading, filters, search, paging, settings, sign-out, keyboard-only use, Back after sign-out, and no sideways scrolling at phone width. Any console error or Content-Security-Policy violation fails the test |
+| Mutation | `npm run test:mutation` | PostgreSQL | Plants 22 deliberate bugs in security- and logic-critical code, one at a time, and requires the tests to catch each one ([tests/mutation](tests/mutation)) |
 
 ```sh
-npm run check            # typecheck (source and tests), unit tests, build
+npm run check            # lint, typecheck (source, tests, browser scripts), unit tests, build
 npm run test:coverage    # unit + integration with coverage thresholds
-npm run test:all         # all three layers
-npx playwright install chromium   # once, before the first browser run
+npm run test:all         # unit, integration and both browsers
+npx playwright install chromium firefox   # once, before the first browser run
 ```
 
 - **A separate database.** Integration and browser tests use `<POSTGRES_DB>_test`, created and migrated automatically, so they never touch development data.
 - **No network.** Google and Microsoft are replaced by in-process stand-ins; an unexpected outbound request fails the test.
-- **Coverage is enforced.** `test:coverage` fails below 90% of lines, 75% of branches or 85% of functions. It currently reports 93%, 81% and 89%.
+- **Coverage is enforced.** `test:coverage` fails below 90% of lines, 75% of branches or 85% of functions. It currently reports 95%, 87% and 92%.
+- **Migrations are tested both ways.** CI rolls back every migration after 008 and applies it again (`npm run migration -- down <n>`).
 
 ## CI/CD
 
-Every pull request and every push to `main` runs [`.github/workflows/ci.yml`](.github/workflows/ci.yml):
-
-```mermaid
-flowchart LR
-    V["Types, unit tests, build"] --> P
-    I["Integration tests<br>and coverage"] --> P
-    E["Browser tests"] --> P
-    A["Dependency audit"] --> P
-    D["Build and smoke-test<br>the image"] --> P
-    P["Publish image<br>to GHCR"] --> R["GitHub release<br>(version tags only)"]
-```
+Every pull request and every push to `main` runs [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Every action is pinned to a commit SHA and every image to a digest.
 
 | Job | What it checks |
 | --- | --- |
-| Types, unit tests, build | Strict TypeScript over source and tests, the unit suite, and a production build |
-| Integration tests and coverage | Migrations run twice against PostgreSQL 18 to prove they are re-runnable, then the unit and integration suites run under the coverage thresholds. The coverage table is added to the run summary |
-| Browser tests | The Playwright suite in Chromium. Screenshots of every screen are kept as an artifact for 14 days |
+| Lint, types, unit tests, build | Biome, strict TypeScript over source, tests and browser scripts, the unit suite, and a production build |
+| Integration tests and coverage | Migrations run twice, roll back and run again; then the unit and integration suites under the coverage thresholds |
+| Browser tests | The Playwright suite in Chromium and in Firefox, with screenshots kept for 14 days |
+| Mutation tests | Every planted bug must be caught, and the working tree must be unchanged afterwards |
 | Dependency audit | `npm audit` for production dependencies, plus a review of dependencies added by a pull request |
-| Build and smoke-test the image | Builds the Docker image, checks it does not run as root, then starts it in production mode on a read-only filesystem and waits for a healthy `/health` |
+| Secret scan | gitleaks over the full history; reviewed false positives are listed in `.gitleaksignore` |
+| Static analysis | Semgrep with explicit rule packs (JavaScript, TypeScript, OWASP Top 10, secrets, Dockerfile) |
+| Workflow lint | actionlint |
+| API contract lint | Redocly (`recommended-strict`) over `contracts/openapi.yaml` |
+| Configuration scan | Trivy over the Dockerfile |
+| Build, scan and smoke-test the image | Builds the image, scans it with Trivy, checks it does not run as root, starts it read-only in production mode and checks `/health`, the security headers and the session cookie |
 | Publish image | On `main` and version tags only, after every job above passes: pushes `ghcr.io/rossiko22/mailbridge` with a signed build provenance attestation |
 | GitHub release | On a `v*` tag, creates a release with generated notes |
 
 Alongside it:
 
 - **CodeQL** ([`codeql.yml`](.github/workflows/codeql.yml)) scans the code for security problems on every push, pull request and weekly.
-- **Dependabot** ([`dependabot.yml`](.github/dependabot.yml)) opens weekly grouped updates for npm packages, GitHub Actions and the Docker base image.
+- **Dependabot** ([`dependabot.yml`](.github/dependabot.yml)) opens weekly grouped updates for npm packages, GitHub Actions, the Docker base image and the compose images, each at least seven days after its release.
 
 To cut a release:
 
@@ -237,7 +243,8 @@ docker compose --env-file .env.production -f compose.production.yaml exec app no
 ```
 src/
   app.ts, server.ts        Express wiring and startup
-  config/                  environment parsing and the database pool
+  config/                  configuration schema, database pool, logger
+  http/                    error codes and input validation
   middleware/              security headers, same-site check, sessions, throttling, errors
   modules/
     auth/                  sign-in, registration, password reset
@@ -251,7 +258,10 @@ src/
   security/                password hashing and credential encryption
   scripts/                 migrations, demo data, admin tools
 public/                    the interface: HTML, CSS, JavaScript, icons
+types/                     type declarations for the browser scripts
+contracts/                 the OpenAPI contract
 database/migrations/       SQL migrations
-tests/                     unit tests, plus integration/, e2e/ and support/
-deploy/                    Caddy config, backup and smoke-test scripts
+tests/                     unit tests, plus integration/, e2e/, mutation/ and support/
+deploy/                    Caddy config, database roles, backup and smoke-test scripts
+docs/                      architecture, decisions (adr/), runbooks, analysis
 ```

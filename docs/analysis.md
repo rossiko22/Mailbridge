@@ -3,6 +3,15 @@
 Status on 2026-10-20, branch `docs/phase-0-analysis`, based on commit `a4045fc`.
 This document compares Mailbridge with the Outreach Tracker standards and proposes how to close the gaps. No code was changed while writing it.
 
+## Status (2026-10-20)
+
+Steps 1 to 4 of §2 are done, each on its own branch (21+ commits, not yet pushed):
+H1–H8, M1–M7 and L1–L5, L7 are fixed; M8 (docs) is done; M10 is decided (ADR 0011); L6 waits for the session-list
+feature; L8 was dropped (startup already checks the schema; `/health` checks the database); L9 is decided at the domain
+step; L10 is for you to close on GitHub. M9 and H4 are part of the deployment phase (step 6). Measured results:
+search 2.8 s → under 25 ms, all-mail page 22 ms → 0.3 ms (100,000 messages); 22 of 22 mutations caught; coverage 95 %
+of lines, 87 % of branches. Decisions are recorded in [adr/](adr/).
+
 ## 0. Results of the existing checks (run locally)
 
 | Check | Command | Result |

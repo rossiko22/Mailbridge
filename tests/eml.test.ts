@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { storedEml } from '../src/modules/emails/eml.js';
-const email = { id:'ticket-1',subject:'Začetek čšž',senderName:'Ana\r\nBcc: attacker@example.com',senderAddress:'ana@example.com',receivedAt:'2026-10-01T12:00:00Z',body:'Pozdravljeni!\nDruga vrstica.' };
+const email = { id:'message-1',subject:'Začetek čšž',senderName:'Ana\r\nBcc: attacker@example.com',senderAddress:'ana@example.com',receivedAt:'2026-10-01T12:00:00Z',body:'Pozdravljeni!\nDruga vrstica.' };
 test('EML uses CRLF, encoded Unicode headers, base64 body and a snapshot marker',()=>{
  const output=storedEml(email,'support@example.com');
  assert.match(output,/Subject: =\?UTF-8\?B\?/);

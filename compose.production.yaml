@@ -1,4 +1,4 @@
-name: ticket-mail
+name: mailbridge
 services:
   postgres:
     image: postgres:18-alpine
@@ -18,7 +18,7 @@ services:
 
   app:
     build: .
-    image: ticket-mail:local
+    image: mailbridge:local
     restart: unless-stopped
     init: true
     env_file: .env.production

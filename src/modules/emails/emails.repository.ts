@@ -1,9 +1,13 @@
+import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { MailError } from '../../integrations/mail/errors.js';
 import { withTransaction } from '../../config/database.js';
 import type { MailBody, SyncedMessage, SyncPage } from '../../integrations/mail/types.js';
 import { encodeCursor } from './emails.schemas.js';
 import { defaultFilters, type MailFilters, PAGE_SIZE } from './emails.types.js';
+
+// Long enough for a slow provider page (50 messages, with quota waits); a crashed sync frees the account after this.
+export const SYNC_LEASE_SECONDS = 300;
 
 export type OutgoingAction = 'compose' | 'reply' | 'forward';
 export type OutgoingState = 'pending' | 'accepted' | 'failed' | 'unknown';
@@ -158,21 +162,42 @@ export function createEmailRepository(pool: Pool) {
         await pool.query('UPDATE outgoing_messages SET state = $2 WHERE request_id = $1', [requestId, state]);
     }
 
-    // Fetches and stores one sync page while holding a per-account lock, so overlapping syncs cannot interleave.
-    // Returns null when another sync of the same account is already running.
+    // Fetches and stores one sync page. The account is claimed with a lease (one short UPDATE), the provider is asked
+    // without holding a database connection, and the page is saved in a short transaction only if the lease is still
+    // ours. Returns null when another sync of the same account holds the lease.
     async function syncLocked(accountId: string, fetchPage: (cursor: string | null) => Promise<SyncPage>): Promise<SyncPage | null> {
-        return withTransaction(pool, async db => {
-            const lock = await db.query('SELECT pg_try_advisory_xact_lock(hashtext($1)) AS locked', [`mail-sync:${accountId}`]);
-            if (!lock.rows[0].locked) return null;
-            const state = await db.query('SELECT sync_cursor FROM mail_accounts WHERE account_id = $1', [accountId]);
-            const page = await fetchPage(state.rows[0]?.sync_cursor ?? null);
-            for (const message of page.messages) await save(db, accountId, message);
-            await db.query('UPDATE mail_accounts SET sync_cursor = $2, synced_at = NOW(), last_error = NULL WHERE account_id = $1', [
-                accountId,
-                page.cursor,
-            ]);
-            return page;
-        });
+        const lease = randomUUID();
+        const claimed = await pool.query<{ cursor: string | null }>(
+            `UPDATE mail_accounts SET sync_lease_token = $2, sync_lease_until = NOW() + make_interval(secs => $3)
+            WHERE account_id = $1 AND (sync_lease_until IS NULL OR sync_lease_until < NOW())
+            RETURNING sync_cursor AS cursor`,
+            [accountId, lease, SYNC_LEASE_SECONDS],
+        );
+        if (!claimed.rowCount) return null;
+        try {
+            const page = await fetchPage(claimed.rows[0]!.cursor);
+            return await withTransaction(pool, async db => {
+                // Taken over after the lease ran out: the other sync's view is newer, so this page is dropped.
+                const held = await db.query('SELECT 1 FROM mail_accounts WHERE account_id = $1 AND sync_lease_token = $2 FOR UPDATE', [
+                    accountId,
+                    lease,
+                ]);
+                if (!held.rowCount) throw new MailError(409, 'This account is already syncing.');
+                for (const message of page.messages) await save(db, accountId, message);
+                await db.query(
+                    `UPDATE mail_accounts SET sync_cursor = $2, synced_at = NOW(), last_error = NULL, sync_lease_token = NULL, sync_lease_until = NULL
+                    WHERE account_id = $1`,
+                    [accountId, page.cursor],
+                );
+                return page;
+            });
+        } finally {
+            // Released here when the fetch or the save failed; a no-op after a successful save.
+            await pool.query(
+                'UPDATE mail_accounts SET sync_lease_token = NULL, sync_lease_until = NULL WHERE account_id = $1 AND sync_lease_token = $2',
+                [accountId, lease],
+            );
+        }
     }
 
     async function resetSyncCursor(accountId: string) {

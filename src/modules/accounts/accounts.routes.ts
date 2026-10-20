@@ -1,18 +1,21 @@
-import { Router } from 'express';
-import type { Request, Response } from 'express';
-import type { createAuthMiddleware } from '../../middleware/auth.middleware.js';
+import { timingSafeEqual } from 'node:crypto';
+import { type Request, type Response, Router } from 'express';
+import { emptyBody, parse } from '../../http/validate.js';
 import { MailError } from '../../integrations/mail/errors.js';
 import type { MailRegistry } from '../../integrations/mail/registry.js';
-import { providerIds, type ProviderId } from '../../integrations/mail/types.js';
+import { type ProviderId, providerIds } from '../../integrations/mail/types.js';
+import type { createAuthMiddleware } from '../../middleware/auth.middleware.js';
+import { type Audit, noAudit } from '../audit/audit.js';
 import type { EmailService } from '../emails/emails.service.js';
-import type { createAccountsRepository } from './accounts.repository.js';
-import { noAudit, type Audit } from '../audit/audit.js';
+import type { AccountsRepository } from './accounts.repository.js';
+import { accountIdParams, callbackQuery } from './accounts.schemas.js';
 
-type AccountsRepository = ReturnType<typeof createAccountsRepository>;
-const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const saveSession = (req: Request) =>
     new Promise<void>((resolve, reject) => req.session.save(error => (error ? reject(error) : resolve())));
 const providerOf = (value: unknown): ProviderId | undefined => providerIds.find(id => id === value);
+// Compares in constant time, so the response time does not reveal how much of a guessed state was right.
+const sameState = (given: string | undefined, expected: string) =>
+    given !== undefined && given.length === expected.length && timingSafeEqual(Buffer.from(given), Buffer.from(expected));
 
 // Where the person lands after the provider sends them back. The app shows the outcome in a notice.
 const back = (code: string, extra: Record<string, string> = {}) => `/app.html?${new URLSearchParams({ connect: code, ...extra })}`;
@@ -21,14 +24,23 @@ const back = (code: string, extra: Record<string, string> = {}) => `/app.html?${
 export const mayUseProvider = (allowedGmail: readonly string[], provider: ProviderId, email: string) =>
     provider !== 'gmail' || allowedGmail.length === 0 || allowedGmail.includes(email.trim().toLowerCase());
 
-export function createAccountsRouter(
-    auth: ReturnType<typeof createAuthMiddleware>,
-    accounts: AccountsRepository,
-    registry: MailRegistry,
-    emails: EmailService,
-    allowedGmail: readonly string[] = [],
-    audit: Audit = noAudit,
-) {
+export interface AccountsRouterOptions {
+    accounts: AccountsRepository;
+    registry: MailRegistry;
+    emails: EmailService;
+    requireAuth: ReturnType<typeof createAuthMiddleware>['requireAuth'];
+    allowedGmail?: readonly string[];
+    audit?: Audit;
+}
+
+export function createAccountsRouter({
+    accounts,
+    registry,
+    emails,
+    requireAuth,
+    allowedGmail = [],
+    audit = noAudit,
+}: AccountsRouterOptions) {
     const router = Router();
 
     // The two browser-navigation routes send signed-out visitors to the sign-in page instead of showing JSON.
@@ -37,7 +49,7 @@ export function createAccountsRouter(
             res.redirect('/index.html');
             return;
         }
-        auth.requireAuth(req, res, next);
+        requireAuth(req, res, next);
     };
 
     router.get('/connect/:provider', signedInPage, async (req, res) => {
@@ -56,6 +68,7 @@ export function createAccountsRouter(
     router.get('/callback/:provider', signedInPage, async (req, res) => {
         const id = providerOf(req.params.provider);
         const provider = id && mayUseProvider(allowedGmail, id, req.currentUser!.email) ? registry.provider(id) : undefined;
+        const query = callbackQuery.parse(req.query);
         const pending = req.session.mailOAuth;
         delete req.session.mailOAuth;
         await saveSession(req);
@@ -63,24 +76,18 @@ export function createAccountsRouter(
             res.redirect(back('unavailable'));
             return;
         }
-        if (
-            !pending ||
-            pending.provider !== id ||
-            pending.expiresAt < Date.now() ||
-            typeof req.query.state !== 'string' ||
-            req.query.state !== pending.state
-        ) {
+        if (!pending || pending.provider !== id || pending.expiresAt < Date.now() || !sameState(query.state, pending.state)) {
             await audit.record(req, 'account-connect', 'denied', { detail: { provider: id, reason: 'invalid-state' } });
             res.redirect(back('invalid-state'));
             return;
         }
-        if (typeof req.query.code !== 'string') {
+        if (query.code === undefined) {
             await audit.record(req, 'account-connect', 'failure', { detail: { provider: id, reason: 'declined' } });
             res.redirect(back('denied'));
             return;
         }
         try {
-            const profile = await provider.complete(req.query.code, pending);
+            const profile = await provider.complete(query.code, pending);
             const saved = await accounts.upsertConnected(
                 req.currentUser!.userId,
                 id,
@@ -107,7 +114,7 @@ export function createAccountsRouter(
         }
     });
 
-    router.use(auth.requireAuth);
+    router.use(requireAuth);
     router.use((_req, res, next) => {
         res.set('Cache-Control', 'no-store');
         next();
@@ -125,16 +132,16 @@ export function createAccountsRouter(
         res.json({ accounts: await accounts.list(req.currentUser!.userId), providers, ...(notice ? { notice } : {}) });
     });
 
-    router.param('id', (_req, _res, next, id) => {
-        next(uuid.test(id) ? undefined : new MailError(400, 'Invalid account ID.'));
-    });
-
     router.post('/:id/sync', async (req, res) => {
-        res.json(await emails.sync(req.currentUser!.userId, String(req.params.id)));
+        const { id } = parse(accountIdParams, req.params);
+        parse(emptyBody, req.body);
+        res.json(await emails.sync(req.currentUser!.userId, id));
     });
 
     router.delete('/:id', async (req, res) => {
-        const account = await accounts.get(req.currentUser!.userId, String(req.params.id));
+        const { id } = parse(accountIdParams, req.params);
+        parse(emptyBody, req.body);
+        const account = await accounts.get(req.currentUser!.userId, id);
         if (!account || !(await accounts.remove(req.currentUser!.userId, account.id))) throw new MailError(404, 'Account not found.');
         await audit.record(req, 'account-remove', 'success', {
             target: account.id,

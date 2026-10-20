@@ -86,7 +86,7 @@ test('malformed identifiers are rejected before reaching the database', async ()
     assert.equal((await client.get('/emails/not-a-uuid')).status, 400);
     assert.equal((await client.post('/accounts/not-a-uuid/sync')).status, 400);
     assert.equal((await client.get("/emails?account=1'%20OR%20'1'='1")).status, 400);
-    assert.equal((await client.get('/emails?offset=-1')).status, 400);
+    assert.equal((await client.get('/emails?offset=10')).status, 400, 'unknown query parameters are refused');
     assert.equal((await client.get('/emails?sort=sideways')).status, 400);
 });
 test('profile names and photos are validated', async () => {

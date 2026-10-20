@@ -100,8 +100,18 @@ export function createApp({ pool, env }: AppDependencies) {
         store: accounts.credentialStore,
     });
     const emailService = createEmailService(createEmailRepository(pool), accounts, registry);
-    app.use('/accounts', createAccountsRouter(authMiddleware, accounts, registry, emailService, env.GMAIL_ALLOWED_EMAILS, audit));
-    app.use('/emails', createEmailRouter(authMiddleware, emailService, audit));
+    app.use(
+        '/accounts',
+        createAccountsRouter({
+            accounts,
+            registry,
+            emails: emailService,
+            requireAuth: authMiddleware.requireAuth,
+            allowedGmail: env.GMAIL_ALLOWED_EMAILS,
+            audit,
+        }),
+    );
+    app.use('/emails', createEmailRouter({ service: emailService, requireAuth: authMiddleware.requireAuth, audit }));
 
     app.get('/health', async (_req, res) => {
         await pool.query('SELECT 1');

@@ -55,3 +55,34 @@ test('a profile change succeeds and is trimmed', async () => {
     assert.equal(response.status, 200);
     assert.equal(((await response.json()) as { user: { displayName: string } }).user.displayName, 'New Name');
 });
+
+test('mail and account endpoints reject invalid input with the failing fields', async () => {
+    const { client } = await register(app, 'person@example.com');
+    const id = '00000000-0000-4000-8000-000000000001';
+    const message = { accountId: id, requestId: id, subject: 'Hi', body: 'Text', to: ['a@example.com'] };
+    await expectInvalid(client, 'POST', '/emails/compose', { ...message, subject: 'Hi\r\nBcc: victim@example.com' }, ['subject']);
+    await expectInvalid(client, 'POST', '/emails/compose', { ...message, to: ['a@example.com, b@example.com'] }, ['to.0']);
+    await expectInvalid(client, 'POST', '/emails/compose', { ...message, to: [] }, ['to']);
+    await expectInvalid(client, 'POST', '/emails/compose', { ...message, cc: Array(20).fill('c@example.com') }, ['to']);
+    await expectInvalid(client, 'POST', '/emails/compose', { ...message, from: 'ceo@example.com' }, ['']);
+    await expectInvalid(client, 'POST', '/emails/compose', { ...message, body: '   ' }, ['body']);
+    await expectInvalid(
+        client,
+        'POST',
+        `/emails/${id}/send`,
+        { action: 'reply', requestId: id, comment: 'Hi', recipients: ['a@example.com'] },
+        ['recipients'],
+    );
+    await expectInvalid(client, 'POST', `/emails/${id}/send`, { action: 'forward', requestId: id, comment: '', recipients: [] }, [
+        'recipients',
+    ]);
+    await expectInvalid(client, 'POST', `/emails/${id}/send`, { action: 'delete', requestId: id }, ['action']);
+    await expectInvalid(client, 'PATCH', `/emails/${id}/read`, { isRead: 'yes' }, ['isRead']);
+    await expectInvalid(client, 'GET', `/emails/${id}/body?images=1`, undefined, ['images']);
+    await expectInvalid(client, 'GET', `/emails/${id}/export?original=yes`, undefined, ['original']);
+    await expectInvalid(client, 'GET', '/emails/not-a-uuid', undefined, ['id']);
+    await expectInvalid(client, 'GET', `/emails?search=${'x'.repeat(201)}`, undefined, ['search']);
+    await expectInvalid(client, 'GET', '/emails?unread=maybe', undefined, ['unread']);
+    await expectInvalid(client, 'POST', `/accounts/${id}/sync`, { full: true }, ['']);
+    await expectInvalid(client, 'DELETE', '/accounts/not-a-uuid', {}, ['id']);
+});

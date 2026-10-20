@@ -12,3 +12,8 @@ test('credentials round-trip and are bound to their account', () => {
 test('malformed ciphertext is rejected', () => {
     assert.throws(() => tokenVault('secret', 'a').decrypt('nonsense'));
 });
+test('a shortened authentication tag is rejected', () => {
+    const [iv, tag, data] = tokenVault('secret', 'a').encrypt('value').split('.');
+    const short = Buffer.from(tag!, 'base64').subarray(0, 4).toString('base64');
+    assert.throws(() => tokenVault('secret', 'a').decrypt([iv, short, data].join('.')), /Invalid encrypted credentials/);
+});

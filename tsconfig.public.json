@@ -1,0 +1,14 @@
+{
+    "compilerOptions": {
+        "allowJs": true,
+        "checkJs": true,
+        "noEmit": true,
+        "target": "es2023",
+        "module": "esnext",
+        "lib": ["es2023", "dom", "dom.iterable"],
+        "types": [],
+        "strict": false,
+        "skipLibCheck": true
+    },
+    "include": ["public/js/*.js", "types/browser.d.ts"]
+}

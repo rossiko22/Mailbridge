@@ -15,7 +15,7 @@
     "dev": "tsx watch --include .env src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json && tsc -p tsconfig.public.json",
     "check": "npm run lint && npm run typecheck && npm test && npm run build",
     "migration:prod": "node dist/scripts/migrate.js",
     "start:render": "node dist/scripts/migrate.js && node dist/server.js",

@@ -38,8 +38,10 @@
 
   // Delegated, so toggles rendered later by other scripts work without extra wiring.
   document.addEventListener('click', event => {
-    if (event.target.closest('[data-theme-toggle]')) set(theme === 'dark' ? 'light' : 'dark');
-    else if (event.target.closest('[data-theme-set]')) set(event.target.closest('[data-theme-set]').dataset.themeSet);
+    const target = /** @type {Element} */ (event.target);
+    const chosen = /** @type {HTMLElement | null} */ (target.closest('[data-theme-set]'));
+    if (target.closest('[data-theme-toggle]')) set(theme === 'dark' ? 'light' : 'dark');
+    else if (chosen) set(chosen.dataset.themeSet);
   });
 
   window.Theme = { apply, set, get: () => theme };

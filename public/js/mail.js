@@ -810,14 +810,14 @@
   });
 
   // ---------- Controls ----------
-  for (const tab of document.querySelectorAll('[data-filter]'))
+  for (const tab of /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('[data-filter]')))
     tab.addEventListener('click', () => {
       state.filter = tab.dataset.filter;
       for (const item of document.querySelectorAll('[data-filter]')) item.setAttribute('aria-selected', String(item === tab));
       loadList();
     });
   popover($('#sort-button'), $('#sort-menu'));
-  for (const item of document.querySelectorAll('[data-sort]'))
+  for (const item of /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('[data-sort]')))
     item.addEventListener('click', () => {
       state.sort = item.dataset.sort;
       for (const option of document.querySelectorAll('[data-sort]')) option.setAttribute('aria-checked', String(option === item));
@@ -876,7 +876,8 @@
     state.accountId = params.get('account');
     const connect = params.get('connect');
     // Only fixed texts are shown for a result named in the address; the reason for a failure comes from the server.
-    if (connectMessages[connect]) toast(...connectMessages[connect]);
+    const known = connectMessages[connect];
+    if (known) toast(known[0], known[1]);
     if (params.has('connect') || params.has('message')) {
       const url = new URL(location.href);
       url.search = state.accountId ? `?account=${state.accountId}` : '';

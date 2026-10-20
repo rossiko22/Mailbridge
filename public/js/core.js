@@ -58,7 +58,7 @@
   function avatar({ name, key, url, size = '' }) {
     const el = document.createElement('span');
     el.className = `avatar${size ? ` avatar--${size}` : ''}`;
-    el.dataset.person = personColor(key || name);
+    el.dataset.person = String(personColor(key || name));
     if (url) {
       const img = document.createElement('img');
       img.alt = '';
@@ -168,13 +168,14 @@
     window.Theme?.apply();
     popover(bar.querySelector('#profile-button'), bar.querySelector('#profile-menu'));
     bar.querySelector('[data-action="logout"]').addEventListener('click', async event => {
-      event.currentTarget.disabled = true;
+      const button = /** @type {HTMLButtonElement} */ (event.currentTarget);
+      button.disabled = true;
       try {
         await api('/auth/logout', json('POST'));
         location.assign('index.html');
       } catch (error) {
         toast(error.message, 'error');
-        event.currentTarget.disabled = false;
+        button.disabled = false;
       }
     });
     whoAmI()
@@ -232,7 +233,7 @@
     const date = new Date(value);
     const now = new Date();
     if (date.toDateString() === now.toDateString()) return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-    const days = (now - date) / 86_400_000;
+    const days = (now.getTime() - date.getTime()) / 86_400_000;
     if (days < 6) return date.toLocaleDateString([], { weekday: 'short' });
     return date.toLocaleDateString(
       [],

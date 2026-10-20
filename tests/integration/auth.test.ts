@@ -136,6 +136,18 @@ test('a reset link works once, replaces the password and signs out existing sess
     assert.equal((await login('person@example.com', PASSWORD)).status, 401);
     assert.equal((await login('person@example.com', 'a-brand-new-password')).status, 200);
 });
+test('a deactivated account can neither sign in nor use a reset link issued before', async () => {
+    const { user } = await register(app, 'person@example.com');
+    const { token } = await requestReset('person@example.com');
+    await app.pool.query('UPDATE users SET is_active = FALSE WHERE user_id = $1', [user.userId]);
+    const signIn = await login('person@example.com', PASSWORD);
+    assert.equal(signIn.status, 401);
+    assert.equal((await errorOf(signIn)).code, 'invalid_credentials', 'the same answer as a wrong password');
+    const reset = await createClient(app.url).post('/auth/reset', { token, password: 'a-brand-new-password' });
+    assert.equal((await errorOf(reset)).code, 'invalid_reset_token');
+    const unused = await app.pool.query('SELECT used_at FROM password_resets');
+    assert.equal(unused.rows[0].used_at, null, 'nothing changed: the token is not even spent');
+});
 test('an expired reset link and a superseded one are both refused', async () => {
     await register(app, 'person@example.com');
     const first = await requestReset('person@example.com');

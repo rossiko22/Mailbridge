@@ -86,6 +86,14 @@
             "linter": {
                 "enabled": false
             }
+        },
+        {
+            "includes": ["package.json"],
+            "json": {
+                "formatter": {
+                    "indentWidth": 2
+                }
+            }
         }
     ]
 }

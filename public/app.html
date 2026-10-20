@@ -1,71 +1,75 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light dark">
-  <title>Mail · Mailbridge</title>
-  <link rel="icon" href="assets/logo-dark.svg" type="image/svg+xml">
-  <script src="js/theme.js"></script>
-  <link rel="stylesheet" href="css/tokens.css">
-  <link rel="stylesheet" href="css/components.css">
-  <link rel="stylesheet" href="css/layout.css">
-  <script src="js/core.js" defer></script>
-  <script src="js/mail.js" defer></script>
-</head>
-<body>
-  <a class="skip-link" href="#message-list">Skip to messages</a>
-  <div class="app">
-    <header data-appbar></header>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>Mail · Mailbridge</title>
+    <link rel="icon" href="assets/logo-dark.svg" type="image/svg+xml">
+    <script src="js/theme.js"></script>
+    <link rel="stylesheet" href="css/tokens.css">
+    <link rel="stylesheet" href="css/components.css">
+    <link rel="stylesheet" href="css/layout.css">
+    <script src="js/core.js" defer></script>
+    <script src="js/mail.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#message-list">Skip to messages</a>
+    <div class="app">
+      <header data-appbar></header>
 
-    <div class="workspace workspace--mail" id="workspace" data-view="list">
-      <aside class="sidebar" id="sidebar" aria-label="Mailboxes"></aside>
+      <div class="workspace workspace--mail" id="workspace" data-view="list">
+        <aside class="sidebar" id="sidebar" aria-label="Mailboxes"></aside>
 
-      <section class="pane list-pane" aria-label="Messages">
-        <div class="list-head">
-          <div class="list-head__row">
-            <h1 id="list-title" class="truncate">All mail</h1>
-            <div class="row">
-              <button type="button" class="icon-btn" id="sync-button" aria-label="Sync all accounts" title="Sync all accounts"></button>
-              <div class="menu-anchor">
-                <button type="button" class="icon-btn" id="sort-button" aria-label="Sort messages" title="Sort"></button>
-                <div class="menu" id="sort-menu" role="menu" hidden>
-                  <button type="button" class="menu__item" role="menuitemradio" data-sort="newest" aria-checked="true">Newest on top</button>
-                  <button type="button" class="menu__item" role="menuitemradio" data-sort="oldest" aria-checked="false">Oldest on top</button>
+        <section class="pane list-pane" aria-label="Messages">
+          <div class="list-head">
+            <div class="list-head__row">
+              <h1 id="list-title" class="truncate">All mail</h1>
+              <div class="row">
+                <button type="button" class="icon-btn" id="sync-button" aria-label="Sync all accounts" title="Sync all accounts"></button>
+                <div class="menu-anchor">
+                  <button type="button" class="icon-btn" id="sort-button" aria-label="Sort messages" title="Sort"></button>
+                  <div class="menu" id="sort-menu" role="menu" hidden>
+                    <button type="button" class="menu__item" role="menuitemradio" data-sort="newest" aria-checked="true">
+                      Newest on top
+                    </button>
+                    <button type="button" class="menu__item" role="menuitemradio" data-sort="oldest" aria-checked="false">
+                      Oldest on top
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
+            <div class="tabs" role="tablist" aria-label="Filter messages">
+              <button type="button" class="tab" role="tab" data-filter="all" aria-selected="true">All</button>
+              <button type="button" class="tab" role="tab" data-filter="unread" aria-selected="false">Unread</button>
+            </div>
           </div>
-          <div class="tabs" role="tablist" aria-label="Filter messages">
-            <button type="button" class="tab" role="tab" data-filter="all" aria-selected="true">All</button>
-            <button type="button" class="tab" role="tab" data-filter="unread" aria-selected="false">Unread</button>
+          <div class="list-scroll" id="list-scroll">
+            <div id="list-banner"></div>
+            <ul id="message-list" aria-live="off"></ul>
+            <div id="list-state"></div>
+            <div class="list-more" id="list-more" hidden><button type="button" class="btn" id="more-button">Load more</button></div>
           </div>
-        </div>
-        <div class="list-scroll" id="list-scroll">
-          <div id="list-banner"></div>
-          <ul id="message-list" aria-live="off"></ul>
-          <div id="list-state"></div>
-          <div class="list-more" id="list-more" hidden><button type="button" class="btn" id="more-button">Load more</button></div>
-        </div>
-      </section>
+        </section>
 
-      <section class="pane reader-pane" id="reader" aria-label="Message" tabindex="-1"></section>
+        <section class="pane reader-pane" id="reader" aria-label="Message" tabindex="-1"></section>
+      </div>
     </div>
-  </div>
 
-  <dialog class="dialog" id="compose-dialog" aria-labelledby="compose-title">
-    <form id="compose-form" method="dialog" novalidate>
-      <div class="dialog__head">
-        <h2 id="compose-title">New message</h2>
-        <button type="button" class="icon-btn" data-close aria-label="Close"></button>
-      </div>
-      <div class="dialog__body" id="compose-body"></div>
-      <div class="dialog__foot">
-        <button type="submit" class="btn btn--primary" id="compose-send"></button>
-        <button type="button" class="btn" data-close>Discard</button>
-        <span class="muted grow" id="compose-status" role="status"></span>
-      </div>
-    </form>
-  </dialog>
-</body>
+    <dialog class="dialog" id="compose-dialog" aria-labelledby="compose-title">
+      <form id="compose-form" method="dialog" novalidate>
+        <div class="dialog__head">
+          <h2 id="compose-title">New message</h2>
+          <button type="button" class="icon-btn" data-close aria-label="Close"></button>
+        </div>
+        <div class="dialog__body" id="compose-body"></div>
+        <div class="dialog__foot">
+          <button type="submit" class="btn btn--primary" id="compose-send"></button>
+          <button type="button" class="btn" data-close>Discard</button>
+          <span class="muted grow" id="compose-status" role="status"></span>
+        </div>
+      </form>
+    </dialog>
+  </body>
 </html>

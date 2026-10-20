@@ -17,8 +17,11 @@ export function createAuthService(userRepository: UserRepository, mailer: Mailer
         await userRepository.createResetToken(user.userId, hashToken(token), new Date(now() + RESET_MINUTES * 60_000));
         // The token travels in the URL fragment, which browsers never send to servers or in Referer headers.
         // Delivery runs in the background so the response time does not reveal whether the account exists.
-        void mailer.sendPasswordReset(user.email, `${publicOrigin}/reset.html#token=${token}`, RESET_MINUTES)
-            .catch(error => console.error(JSON.stringify({ event: 'reset-mail-failed', name: error instanceof Error ? error.name : 'Unknown' })));
+        void mailer
+            .sendPasswordReset(user.email, `${publicOrigin}/reset.html#token=${token}`, RESET_MINUTES)
+            .catch(error =>
+                console.error(JSON.stringify({ event: 'reset-mail-failed', name: error instanceof Error ? error.name : 'Unknown' })),
+            );
     }
 
     async function resetPassword(token: string, newPassword: string): Promise<string | null> {

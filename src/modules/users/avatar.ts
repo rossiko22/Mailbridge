@@ -11,7 +11,7 @@ const signatures: Record<AvatarImage['contentType'], (data: Buffer) => boolean> 
 // Accepts only a base64 data URL of a real PNG, JPEG or WebP no larger than 512 KiB.
 // The browser shrinks photos before uploading; this is the server's own check, not a trust in the label.
 export function parseAvatar(value: unknown): { contentType: AvatarImage['contentType']; data: Buffer } | null {
-    if (typeof value !== 'string' || value.length > Math.ceil(MAX_AVATAR_BYTES * 4 / 3) + 64) return null;
+    if (typeof value !== 'string' || value.length > Math.ceil((MAX_AVATAR_BYTES * 4) / 3) + 64) return null;
     const match = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/]+={0,2})$/.exec(value);
     if (!match) return null;
     const contentType = match[1] as AvatarImage['contentType'];

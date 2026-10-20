@@ -5,7 +5,9 @@ export const EMAIL_MAX = 254;
 
 // A format check only; it does not prove the address belongs to the person.
 export function validEmail(value: unknown): value is string {
-    return typeof value === 'string' && value.trim().length > 0 && value.length <= EMAIL_MAX && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+    return (
+        typeof value === 'string' && value.trim().length > 0 && value.length <= EMAIL_MAX && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())
+    );
 }
 
 export function validNewPassword(value: unknown): value is string {

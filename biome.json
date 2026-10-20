@@ -1,0 +1,91 @@
+{
+    "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+    "vcs": {
+        "enabled": true,
+        "clientKind": "git",
+        "useIgnoreFile": true
+    },
+    "files": {
+        "includes": ["**", "!**/dist", "!**/coverage", "!**/test-results", "!**/playwright-report", "!**/package-lock.json"]
+    },
+    "formatter": {
+        "enabled": true,
+        "indentStyle": "space",
+        "indentWidth": 4,
+        "lineWidth": 140
+    },
+    "javascript": {
+        "formatter": {
+            "quoteStyle": "single",
+            "semicolons": "always",
+            "trailingCommas": "all",
+            "arrowParentheses": "asNeeded"
+        }
+    },
+    "html": {
+        "formatter": {
+            "enabled": false
+        }
+    },
+    "css": {
+        "formatter": {
+            "enabled": true
+        }
+    },
+    "linter": {
+        "enabled": true,
+        "rules": {
+            "recommended": true,
+            "correctness": {
+                "noUnusedImports": "error",
+                "noUnusedVariables": "error"
+            },
+            "suspicious": {
+                "noExplicitAny": "error",
+                "noControlCharactersInRegex": "off"
+            },
+            "style": {
+                "useConst": "error",
+                "useImportType": "error",
+                "noNonNullAssertion": "off"
+            }
+        }
+    },
+    "assist": {
+        "actions": {
+            "source": {
+                "organizeImports": "off"
+            }
+        }
+    },
+    "overrides": [
+        {
+            "includes": ["public/**"],
+            "formatter": {
+                "indentWidth": 2
+            }
+        },
+        {
+            "includes": ["public/css/**"],
+            "linter": {
+                "rules": {
+                    "complexity": {
+                        "noImportantStyles": "off"
+                    },
+                    "suspicious": {
+                        "noDuplicateProperties": "off"
+                    },
+                    "style": {
+                        "noDescendingSpecificity": "off"
+                    }
+                }
+            }
+        },
+        {
+            "includes": ["public/assets/icons.svg"],
+            "linter": {
+                "enabled": false
+            }
+        }
+    ]
+}

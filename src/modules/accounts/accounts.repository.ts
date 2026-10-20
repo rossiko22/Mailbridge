@@ -28,12 +28,18 @@ const counts = `LEFT JOIN LATERAL (SELECT count(*) AS total, count(*) FILTER (WH
 
 export function createAccountsRepository(pool: Pool, secret: string) {
     async function list(userId: string): Promise<Account[]> {
-        const { rows } = await pool.query<Account>(`SELECT ${columns} FROM mail_accounts a ${counts} WHERE a.user_id = $1 ORDER BY a.created_at, a.account_id`, [userId]);
+        const { rows } = await pool.query<Account>(
+            `SELECT ${columns} FROM mail_accounts a ${counts} WHERE a.user_id = $1 ORDER BY a.created_at, a.account_id`,
+            [userId],
+        );
         return rows;
     }
 
     async function get(userId: string, accountId: string): Promise<Account | undefined> {
-        const { rows } = await pool.query<Account>(`SELECT ${columns} FROM mail_accounts a ${counts} WHERE a.user_id = $1 AND a.account_id = $2`, [userId, accountId]);
+        const { rows } = await pool.query<Account>(
+            `SELECT ${columns} FROM mail_accounts a ${counts} WHERE a.user_id = $1 AND a.account_id = $2`,
+            [userId, accountId],
+        );
         return rows[0];
     }
 
@@ -44,23 +50,35 @@ export function createAccountsRepository(pool: Pool, secret: string) {
             await client.query('BEGIN');
             await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`account:${userId}:${provider}:${email.toLowerCase()}`]);
             const existing = await client.query<{ account_id: string }>(
-                'SELECT account_id FROM mail_accounts WHERE user_id=$1 AND provider=$2 AND lower(email)=lower($3)', [userId, provider, email]);
+                'SELECT account_id FROM mail_accounts WHERE user_id=$1 AND provider=$2 AND lower(email)=lower($3)',
+                [userId, provider, email],
+            );
             const id = existing.rows[0]?.account_id ?? randomUUID();
             const encrypted = tokenVault(secret, id).encrypt(credentials);
             if (existing.rows[0]) {
-                await client.query(`UPDATE mail_accounts SET credentials=$2, display_name=$3, needs_reconnect=FALSE, last_error=NULL
-                    WHERE account_id=$1`, [id, encrypted, displayName]);
+                await client.query(
+                    `UPDATE mail_accounts SET credentials=$2, display_name=$3, needs_reconnect=FALSE, last_error=NULL
+                    WHERE account_id=$1`,
+                    [id, encrypted, displayName],
+                );
             } else {
                 const used = await client.query<{ color: string }>('SELECT color FROM mail_accounts WHERE user_id=$1', [userId]);
                 const taken = new Set(used.rows.map(row => row.color));
                 const color = accountColors.find(item => !taken.has(item)) ?? accountColors[used.rows.length % accountColors.length]!;
-                await client.query(`INSERT INTO mail_accounts (account_id, user_id, provider, email, display_name, color, credentials)
-                    VALUES ($1,$2,$3,$4,$5,$6,$7)`, [id, userId, provider, email, displayName, color, encrypted]);
+                await client.query(
+                    `INSERT INTO mail_accounts (account_id, user_id, provider, email, display_name, color, credentials)
+                    VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+                    [id, userId, provider, email, displayName, color, encrypted],
+                );
             }
             await client.query('COMMIT');
             return { id, created: !existing.rows[0] };
-        } catch (error) { await client.query('ROLLBACK'); throw error; }
-        finally { client.release(); }
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
+        }
     }
 
     async function remove(userId: string, accountId: string): Promise<boolean> {
@@ -69,7 +87,11 @@ export function createAccountsRepository(pool: Pool, secret: string) {
     }
 
     async function markError(accountId: string, message: string, needsReconnect: boolean) {
-        await pool.query('UPDATE mail_accounts SET last_error=$2, needs_reconnect = needs_reconnect OR $3 WHERE account_id=$1', [accountId, message.slice(0, 500), needsReconnect]);
+        await pool.query('UPDATE mail_accounts SET last_error=$2, needs_reconnect = needs_reconnect OR $3 WHERE account_id=$1', [
+            accountId,
+            message.slice(0, 500),
+            needsReconnect,
+        ]);
     }
 
     // The account row is locked while credentials may change, so two refreshes never race.
@@ -78,15 +100,23 @@ export function createAccountsRepository(pool: Pool, secret: string) {
             const client = await pool.connect();
             try {
                 await client.query('BEGIN');
-                const { rows } = await client.query<{ credentials: string | null }>('SELECT credentials FROM mail_accounts WHERE account_id=$1 FOR UPDATE', [accountId]);
+                const { rows } = await client.query<{ credentials: string | null }>(
+                    'SELECT credentials FROM mail_accounts WHERE account_id=$1 FOR UPDATE',
+                    [accountId],
+                );
                 if (!rows[0]) throw new Error('Account not found');
                 const vault = tokenVault(secret, accountId);
-                const result = await work(rows[0].credentials ? vault.decrypt(rows[0].credentials) : null,
-                    async next => { await client.query('UPDATE mail_accounts SET credentials=$2 WHERE account_id=$1', [accountId, vault.encrypt(next)]); });
+                const result = await work(rows[0].credentials ? vault.decrypt(rows[0].credentials) : null, async next => {
+                    await client.query('UPDATE mail_accounts SET credentials=$2 WHERE account_id=$1', [accountId, vault.encrypt(next)]);
+                });
                 await client.query('COMMIT');
                 return result;
-            } catch (error) { await client.query('ROLLBACK'); throw error; }
-            finally { client.release(); }
+            } catch (error) {
+                await client.query('ROLLBACK');
+                throw error;
+            } finally {
+                client.release();
+            }
         },
     };
 

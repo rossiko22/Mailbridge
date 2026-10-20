@@ -10,17 +10,26 @@ const failsWith = (status: number, reconnect?: boolean) => (error: unknown) =>
 
 function recording(answer: (url: string, init: RequestInit) => Response) {
     const calls: Array<{ url: string; init: RequestInit }> = [];
-    const client = createGraphClient(async () => 'token', (async (input: RequestInfo | URL, init: RequestInit = {}) => {
-        calls.push({ url: String(input), init });
-        return answer(String(input), init);
-    }) as typeof fetch, () => Date.UTC(2026, 9, 13));
+    const client = createGraphClient(
+        async () => 'token',
+        (async (input: RequestInfo | URL, init: RequestInit = {}) => {
+            calls.push({ url: String(input), init });
+            return answer(String(input), init);
+        }) as typeof fetch,
+        () => Date.UTC(2026, 9, 13),
+    );
     return { client, calls };
 }
 
 test('partial updates keep only the fields Graph sent', () => {
     assert.deepEqual(toSyncedMessage({ id: 'a', isRead: true }), { id: 'a', fields: { isRead: true } });
     assert.deepEqual(toSyncedMessage({ id: 'a', '@removed': { reason: 'deleted' } }), { id: 'a', removed: true, fields: {} });
-    const full = toSyncedMessage({ id: 'a', subject: 'Hi', from: { emailAddress: { name: 'Ann', address: 'ann@example.com' } }, hasAttachments: true });
+    const full = toSyncedMessage({
+        id: 'a',
+        subject: 'Hi',
+        from: { emailAddress: { name: 'Ann', address: 'ann@example.com' } },
+        hasAttachments: true,
+    });
     assert.deepEqual(full.fields, { subject: 'Hi', sender: { name: 'Ann', address: 'ann@example.com' }, hasAttachments: true });
 });
 test('both continuation URL styles canonicalize to the same path', () => {
@@ -46,7 +55,8 @@ test('a stored cursor is only followed when it points at the Graph inbox delta',
         'https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages/delta/../../../../sendMail',
         'http://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages/delta',
         'not a url',
-    ]) await assert.rejects(client.sync(cursor), failsWith(502), cursor);
+    ])
+        await assert.rejects(client.sync(cursor), failsWith(502), cursor);
     assert.equal(calls.length, 0, 'the bearer token was never sent anywhere');
     assert.equal((await client.sync(DELTA)).hasMore, false);
 });
@@ -63,8 +73,10 @@ test('Graph failures become messages a person can act on', async () => {
 });
 test('a server error while sending is uncertain, not a clean failure', async () => {
     const { client } = recording(() => reply({}, 503));
-    await assert.rejects(client.compose({ to: ['a@example.com'], cc: [], bcc: [], subject: 'Hi', body: 'Text' }),
-        (error: unknown) => error instanceof Error && !(error instanceof MailError));
+    await assert.rejects(
+        client.compose({ to: ['a@example.com'], cc: [], bcc: [], subject: 'Hi', body: 'Text' }),
+        (error: unknown) => error instanceof Error && !(error instanceof MailError),
+    );
 });
 test('compose and reply send the expected Graph requests', async () => {
     const { client, calls } = recording(() => reply(null, 202));
@@ -78,21 +90,32 @@ test('compose and reply send the expected Graph requests', async () => {
     assert.deepEqual(JSON.parse(String(calls[1]!.init.body)).toRecipients, [{ emailAddress: { address: 'b@example.com' } }]);
 });
 test('cloud-link attachments are not downloaded and unknown ones are not found', async () => {
-    const { client } = recording(url => url.includes('$value') ? new Response('file-bytes') : reply({ value: [
-        { id: 'a1', name: 'report.pdf', size: 10, contentType: 'application/pdf' },
-        { id: 'a2', name: 'shared.docx', size: 0, contentType: 'x', '@odata.type': '#microsoft.graph.referenceAttachment' },
-    ] }));
+    const { client } = recording(url =>
+        url.includes('$value')
+            ? new Response('file-bytes')
+            : reply({
+                  value: [
+                      { id: 'a1', name: 'report.pdf', size: 10, contentType: 'application/pdf' },
+                      { id: 'a2', name: 'shared.docx', size: 0, contentType: 'x', '@odata.type': '#microsoft.graph.referenceAttachment' },
+                  ],
+              }),
+    );
     assert.deepEqual(await client.attachment('m1', 'a1'), { name: 'report.pdf', data: Buffer.from('file-bytes') });
     await assert.rejects(client.attachment('m1', 'a2'), failsWith(400));
     await assert.rejects(client.attachment('m1', 'missing'), failsWith(404));
 });
 test('attachment paging never follows a link off Graph', async () => {
-    const { client, calls } = recording(() => reply({ value: [], '@odata.nextLink': 'https://evil.example/v1.0/me/messages/m1/attachments' }));
+    const { client, calls } = recording(() =>
+        reply({ value: [], '@odata.nextLink': 'https://evil.example/v1.0/me/messages/m1/attachments' }),
+    );
     await assert.rejects(client.attachments('m1'), failsWith(502));
     assert.equal(calls.length, 1);
 });
 test('a message body must be HTML or text', async () => {
-    assert.deepEqual(await recording(() => reply({ body: { contentType: 'HTML', content: '<p>Hi</p>' } })).client.body('m1'), { contentType: 'html', content: '<p>Hi</p>' });
+    assert.deepEqual(await recording(() => reply({ body: { contentType: 'HTML', content: '<p>Hi</p>' } })).client.body('m1'), {
+        contentType: 'html',
+        content: '<p>Hi</p>',
+    });
     await assert.rejects(recording(() => reply({ body: { contentType: 'rtf', content: 'x' } })).client.body('m1'), failsWith(502));
     await assert.rejects(recording(() => new Response('not json')).client.body('m1'), failsWith(502));
 });

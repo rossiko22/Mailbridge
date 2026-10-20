@@ -1,38 +1,48 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light dark">
-  <title>Reset password · Mailbridge</title>
-  <link rel="icon" href="assets/logo-dark.svg" type="image/svg+xml">
-  <script src="js/theme.js"></script>
-  <link rel="stylesheet" href="css/tokens.css">
-  <link rel="stylesheet" href="css/components.css">
-  <link rel="stylesheet" href="css/auth.css">
-  <script src="js/core.js" defer></script>
-  <script src="js/auth.js" defer></script>
-</head>
-<body data-public>
-  <main class="auth">
-    <section class="auth__card" aria-labelledby="title">
-      <div class="auth__head">
-        <h1 class="auth__title" id="title">Reset password</h1>
-        <p class="muted">Enter your email and we will send you a link to choose a new password.</p>
-      </div>
-      <div id="form-message" class="banner banner--error" role="alert" tabindex="-1" hidden></div>
-      <div id="form-done" class="banner banner--success" role="status" hidden></div>
-      <form class="auth__form" data-auth="forgot" novalidate>
-        <div class="field">
-          <label class="label" for="email">Email</label>
-          <input class="input" id="email" name="email" type="email" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="254" required>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>Reset password · Mailbridge</title>
+    <link rel="icon" href="assets/logo-dark.svg" type="image/svg+xml">
+    <script src="js/theme.js"></script>
+    <link rel="stylesheet" href="css/tokens.css">
+    <link rel="stylesheet" href="css/components.css">
+    <link rel="stylesheet" href="css/auth.css">
+    <script src="js/core.js" defer></script>
+    <script src="js/auth.js" defer></script>
+  </head>
+  <body data-public>
+    <main class="auth">
+      <section class="auth__card" aria-labelledby="title">
+        <div class="auth__head">
+          <h1 class="auth__title" id="title">Reset password</h1>
+          <p class="muted">Enter your email and we will send you a link to choose a new password.</p>
         </div>
-        <button class="btn btn--primary btn--lg btn--block" type="submit">Send reset link</button>
-      </form>
-      <div class="auth__links">
-        <a href="index.html">Back to sign in</a>
-      </div>
-    </section>
-  </main>
-</body>
+        <div id="form-message" class="banner banner--error" role="alert" tabindex="-1" hidden></div>
+        <div id="form-done" class="banner banner--success" role="status" hidden></div>
+        <form class="auth__form" data-auth="forgot" novalidate>
+          <div class="field">
+            <label class="label" for="email">Email</label>
+            <input
+              class="input"
+              id="email"
+              name="email"
+              type="email"
+              autocomplete="username"
+              autocapitalize="none"
+              spellcheck="false"
+              maxlength="254"
+              required
+            >
+          </div>
+          <button class="btn btn--primary btn--lg btn--block" type="submit">Send reset link</button>
+        </form>
+        <div class="auth__links">
+          <a href="index.html">Back to sign in</a>
+        </div>
+      </section>
+    </main>
+  </body>
 </html>

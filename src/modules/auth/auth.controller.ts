@@ -1,10 +1,10 @@
-import type {Request, Response, NextFunction} from "express";
-import type {createUserService} from "../users/users.service.js";
-import type {SafeUser} from "../users/users.types.js";
-import type {AuthService} from "./auth.service.js";
-import { EMAIL_MAX, PASSWORD_MAX, passwordRule, validEmail, validNewPassword } from "./auth.validation.js";
-import { MAX_DISPLAY_NAME } from "../users/users.controller.js";
-import { noAudit, type Audit } from "../audit/audit.js";
+import type { Request, Response, NextFunction } from 'express';
+import type { createUserService } from '../users/users.service.js';
+import type { SafeUser } from '../users/users.types.js';
+import type { AuthService } from './auth.service.js';
+import { EMAIL_MAX, PASSWORD_MAX, passwordRule, validEmail, validNewPassword } from './auth.validation.js';
+import { MAX_DISPLAY_NAME } from '../users/users.controller.js';
+import { noAudit, type Audit } from '../audit/audit.js';
 
 type UserService = ReturnType<typeof createUserService>;
 
@@ -12,62 +12,53 @@ export function createAuthController(userService: UserService, authService: Auth
     // Replaces the session ID (preventing fixation) and stores only the user ID.
     async function startSession(req: Request, user: SafeUser): Promise<void> {
         await new Promise<void>((resolve, reject) => {
-            req.session.regenerate(error => error ? reject(error) : resolve());
+            req.session.regenerate(error => (error ? reject(error) : resolve()));
         });
         req.session.userId = user.userId;
         req.session.signedInAt = Date.now();
         await new Promise<void>((resolve, reject) => {
-            req.session.save(error => error ? reject(error) : resolve());
+            req.session.save(error => (error ? reject(error) : resolve()));
         });
     }
 
-    async function login(
-        req: Request,
-        res: Response,
-        next: NextFunction
-    ): Promise<void> {
-        try{
+    async function login(req: Request, res: Response, next: NextFunction): Promise<void> {
+        try {
             const body: unknown = req.body;
 
-            if(
-                typeof body !== "object" ||
-                body === null ||
-                !("email" in body) ||
-                !("password" in body)
-            ){
-                res.status(400).json(
-                    {message: "Email or password are required"},
-                );
+            if (typeof body !== 'object' || body === null || !('email' in body) || !('password' in body)) {
+                res.status(400).json({ message: 'Email or password are required' });
                 return;
             }
 
             const { email, password } = body;
 
-            if(
-                typeof email !== "string" ||
-                typeof password !== "string" ||
-                email.trim() === "" ||
-                email.length > EMAIL_MAX || password.length > PASSWORD_MAX || password === ""
-            ){
+            if (
+                typeof email !== 'string' ||
+                typeof password !== 'string' ||
+                email.trim() === '' ||
+                email.length > EMAIL_MAX ||
+                password.length > PASSWORD_MAX ||
+                password === ''
+            ) {
                 res.status(400).json({
-                    message: "Invalid email or password."
-                })
+                    message: 'Invalid email or password.',
+                });
                 return;
             }
 
             const user = await userService.validateLogin(email, password);
 
-            if(!user){
+            if (!user) {
                 await audit.record(req, 'sign-in', 'failure', { email });
                 res.status(401).json({
-                    message: "Invalid email or password."
-                })
+                    message: 'Invalid email or password.',
+                });
                 return;
             }
 
             await startSession(req, user);
             await audit.record(req, 'sign-in', 'success', { userId: user.userId });
-            res.status(200).json({user})
+            res.status(200).json({ user });
         } catch (error: unknown) {
             next(error);
         }
@@ -80,8 +71,14 @@ export function createAuthController(userService: UserService, authService: Auth
                 return;
             }
             const { email, password, displayName = '' } = req.body ?? {};
-            if (!validEmail(email)) { res.status(400).json({ message: 'Enter a valid email address.' }); return; }
-            if (!validNewPassword(password)) { res.status(400).json({ message: passwordRule }); return; }
+            if (!validEmail(email)) {
+                res.status(400).json({ message: 'Enter a valid email address.' });
+                return;
+            }
+            if (!validNewPassword(password)) {
+                res.status(400).json({ message: passwordRule });
+                return;
+            }
             if (typeof displayName !== 'string' || displayName.trim().length > MAX_DISPLAY_NAME || /[\x00-\x1f\x7f]/.test(displayName)) {
                 res.status(400).json({ message: `Enter a name of up to ${MAX_DISPLAY_NAME} characters.` });
                 return;
@@ -98,7 +95,10 @@ export function createAuthController(userService: UserService, authService: Auth
     async function forgotPassword(req: Request, res: Response, next: NextFunction): Promise<void> {
         try {
             const { email } = req.body ?? {};
-            if (!validEmail(email)) { res.status(400).json({ message: 'Enter a valid email address.' }); return; }
+            if (!validEmail(email)) {
+                res.status(400).json({ message: 'Enter a valid email address.' });
+                return;
+            }
             await authService.requestPasswordReset(email);
             await audit.record(req, 'password-reset-request', 'success', { email });
             res.json({ message: 'If an account exists for that address, a reset link is on its way. It stays valid for 30 minutes.' });
@@ -114,7 +114,10 @@ export function createAuthController(userService: UserService, authService: Auth
                 res.status(400).json({ message: 'This reset link is invalid or has expired. Request a new one.' });
                 return;
             }
-            if (!validNewPassword(password)) { res.status(400).json({ message: passwordRule }); return; }
+            if (!validNewPassword(password)) {
+                res.status(400).json({ message: passwordRule });
+                return;
+            }
             const userId = await authService.resetPassword(token, password);
             if (!userId) {
                 await audit.record(req, 'password-reset', 'failure');
@@ -132,16 +135,20 @@ export function createAuthController(userService: UserService, authService: Auth
         try {
             const { currentPassword, newPassword } = req.body ?? {};
             if (typeof currentPassword !== 'string' || currentPassword.length > PASSWORD_MAX || !validNewPassword(newPassword)) {
-                res.status(400).json({ message: `Provide your current password. ${passwordRule}` }); return;
+                res.status(400).json({ message: `Provide your current password. ${passwordRule}` });
+                return;
             }
-            if (!await userService.changePassword(req.currentUser!.userId, currentPassword, newPassword)) {
+            if (!(await userService.changePassword(req.currentUser!.userId, currentPassword, newPassword))) {
                 await audit.record(req, 'password-change', 'failure');
-                res.status(400).json({ message: 'Current password is incorrect.' }); return;
+                res.status(400).json({ message: 'Current password is incorrect.' });
+                return;
             }
             await audit.record(req, 'password-change', 'success');
-            await new Promise<void>((resolve, reject) => req.session.destroy(error => error ? reject(error) : resolve()));
+            await new Promise<void>((resolve, reject) => req.session.destroy(error => (error ? reject(error) : resolve())));
             res.clearCookie('session', { path: '/' }).json({ changed: true });
-        } catch (error) { next(error); }
+        } catch (error) {
+            next(error);
+        }
     }
     // Lets the sign-in page show or hide "Create account" without trying it.
     function config(_req: Request, res: Response): void {

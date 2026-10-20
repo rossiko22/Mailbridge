@@ -1,12 +1,10 @@
-import {pool} from "../config/database.js";
-import { DEMO_EMAIL, DEMO_PASSWORD, seedDemoData } from "./demo-data.js";
+import { pool } from '../config/database.js';
+import { DEMO_EMAIL, DEMO_PASSWORD, seedDemoData } from './demo-data.js';
 
 async function main(): Promise<void> {
     try {
-        if (process.env.NODE_ENV !== "development") {
-            throw new Error(
-                "Development seeding requires NODE_ENV=development.",
-            );
+        if (process.env.NODE_ENV !== 'development') {
+            throw new Error('Development seeding requires NODE_ENV=development.');
         }
 
         await seedDemoData(pool);
@@ -17,6 +15,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-    console.error("Development seed failed:", error);
+    console.error('Development seed failed:', error);
     process.exitCode = 1;
 });

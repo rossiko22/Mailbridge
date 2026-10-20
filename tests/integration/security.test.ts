@@ -5,7 +5,9 @@ import { MAX_SESSION_AGE } from '../../src/middleware/auth.middleware.js';
 import { createClient, PASSWORD, register, startApp, type TestApp } from '../support/harness.js';
 
 let app: TestApp;
-before(async () => { app = await startApp(); });
+before(async () => {
+    app = await startApp();
+});
 beforeEach(() => app.reset());
 after(() => app.close());
 
@@ -14,7 +16,8 @@ test('the health check answers and every response carries the security headers',
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), { status: 'ok' });
     const csp = response.headers.get('content-security-policy') ?? '';
-    for (const rule of ["default-src 'self'", "script-src 'self'", "object-src 'none'", "frame-ancestors 'none'", "form-action 'self'"]) assert.ok(csp.includes(rule), rule);
+    for (const rule of ["default-src 'self'", "script-src 'self'", "object-src 'none'", "frame-ancestors 'none'", "form-action 'self'"])
+        assert.ok(csp.includes(rule), rule);
     assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
     assert.equal(response.headers.get('x-frame-options'), 'DENY');
     assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
@@ -32,7 +35,9 @@ test('pages are served with the same headers and are never cached', async () => 
 });
 test('state-changing requests must be same-site JSON', async () => {
     const client = createClient(app.url);
-    const form = await client.request('POST', '/auth/login', 'email=a@example.com&password=x', { 'Content-Type': 'application/x-www-form-urlencoded' });
+    const form = await client.request('POST', '/auth/login', 'email=a@example.com&password=x', {
+        'Content-Type': 'application/x-www-form-urlencoded',
+    });
     assert.equal(form.status, 415);
     const crossSite = await client.post('/auth/login', { email: 'a@example.com', password: 'x' }, { 'Sec-Fetch-Site': 'cross-site' });
     assert.equal(crossSite.status, 415);
@@ -80,7 +85,7 @@ test('profile names and photos are validated', async () => {
     const { client } = await register(app, 'profile@example.com');
     assert.equal((await client.patch('/users/me', { displayName: 'x'.repeat(81) })).status, 400);
     const renamed = await client.patch('/users/me', { displayName: '  Ada Lovelace ' });
-    assert.equal((await renamed.json() as { user: { displayName: string } }).user.displayName, 'Ada Lovelace');
+    assert.equal(((await renamed.json()) as { user: { displayName: string } }).user.displayName, 'Ada Lovelace');
     assert.equal((await client.put('/users/me/avatar', { image: 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=' })).status, 400);
     assert.equal((await client.get('/users/me/avatar')).status, 404);
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
@@ -95,25 +100,39 @@ test('profile names and photos are validated', async () => {
 test('a session ends a fixed time after sign-in, however active it has been', async () => {
     const { client } = await register(app, 'person@example.com');
     assert.equal((await client.get('/auth/me')).status, 200);
-    await app.pool.query(`UPDATE sessions SET sess = jsonb_set(sess::jsonb, '{signedInAt}', to_jsonb($1::bigint))::json`, [Date.now() - MAX_SESSION_AGE - 60_000]);
+    await app.pool.query(`UPDATE sessions SET sess = jsonb_set(sess::jsonb, '{signedInAt}', to_jsonb($1::bigint))::json`, [
+        Date.now() - MAX_SESSION_AGE - 60_000,
+    ]);
     assert.equal((await client.get('/auth/me')).status, 401);
     assert.equal((await app.pool.query('SELECT 1 FROM sessions')).rowCount, 0, 'the expired session is removed');
 });
 test('a signed-in session cannot be used to guess the current password without limit', async () => {
     const { client } = await register(app, 'person@example.com');
     for (let attempt = 0; attempt < 10; attempt++) {
-        assert.equal((await client.post('/auth/password', { currentPassword: `guess-number-${attempt}`, newPassword: 'a-brand-new-password' })).status, 400);
+        assert.equal(
+            (await client.post('/auth/password', { currentPassword: `guess-number-${attempt}`, newPassword: 'a-brand-new-password' }))
+                .status,
+            400,
+        );
     }
     const blocked = await client.post('/auth/password', { currentPassword: PASSWORD, newPassword: 'a-brand-new-password' });
     assert.equal(blocked.status, 429);
     assert.equal(blocked.headers.get('retry-after'), '900');
     const { client: other } = await register(app, 'other@example.com');
-    assert.equal((await other.post('/auth/password', { currentPassword: 'not-the-password', newPassword: 'a-brand-new-password' })).status, 400, 'limits are per person');
+    assert.equal(
+        (await other.post('/auth/password', { currentPassword: 'not-the-password', newPassword: 'a-brand-new-password' })).status,
+        400,
+        'limits are per person',
+    );
 });
 test('sending is limited per person', async () => {
     const { client } = await register(app, 'person@example.com');
     const message = { accountId: randomUUID(), subject: 'Hi', body: 'Text', to: ['a@example.com'] };
-    for (let attempt = 0; attempt < 60; attempt++) assert.equal((await client.post('/emails/compose', { ...message, requestId: randomUUID() })).status, 404);
+    for (let attempt = 0; attempt < 60; attempt++)
+        assert.equal((await client.post('/emails/compose', { ...message, requestId: randomUUID() })).status, 404);
     assert.equal((await client.post('/emails/compose', { ...message, requestId: randomUUID() })).status, 429);
-    assert.equal((await client.post(`/emails/${randomUUID()}/send`, { action: 'reply', requestId: randomUUID(), comment: 'Hi' })).status, 429);
+    assert.equal(
+        (await client.post(`/emails/${randomUUID()}/send`, { action: 'reply', requestId: randomUUID(), comment: 'Hi' })).status,
+        429,
+    );
 });

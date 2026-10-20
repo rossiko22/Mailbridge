@@ -9,15 +9,21 @@ export async function readDownload(response: Response, limit = DOWNLOAD_LIMIT): 
     }
     const reader = response.body?.getReader();
     if (!reader) return Buffer.alloc(0);
-    const chunks: Uint8Array[] = []; let size = 0;
+    const chunks: Uint8Array[] = [];
+    let size = 0;
     try {
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
             size += value.length;
-            if (size > limit) { await reader.cancel(); throw new MailError(413, 'Download exceeds the 25 MiB limit. Open it in your mail provider.'); }
+            if (size > limit) {
+                await reader.cancel();
+                throw new MailError(413, 'Download exceeds the 25 MiB limit. Open it in your mail provider.');
+            }
             chunks.push(value);
         }
         return Buffer.concat(chunks);
-    } finally { reader.releaseLock(); }
+    } finally {
+        reader.releaseLock();
+    }
 }

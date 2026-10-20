@@ -17,7 +17,8 @@ export function createEmailRepository(pool: Pool) {
         const fields = message.fields;
         // Providers send partial updates: only the keys present may overwrite stored values.
         const present = Object.fromEntries(Object.keys(fields).map(key => [key, true]));
-        await client.query(`INSERT INTO emails
+        await client.query(
+            `INSERT INTO emails
             (account_id, provider_id, subject, sender_name, sender_address, preview, body_text, received_at, has_attachments, is_read)
             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
             ON CONFLICT (account_id, provider_id) DO UPDATE SET
@@ -29,13 +30,26 @@ export function createEmailRepository(pool: Pool) {
             received_at=CASE WHEN $11::jsonb ? 'receivedAt' THEN EXCLUDED.received_at ELSE emails.received_at END,
             has_attachments=CASE WHEN $11::jsonb ? 'hasAttachments' THEN EXCLUDED.has_attachments ELSE emails.has_attachments END,
             is_read=CASE WHEN $11::jsonb ? 'isRead' THEN EXCLUDED.is_read ELSE emails.is_read END`,
-            [accountId, message.id, fields.subject ?? '', fields.sender?.name ?? '', fields.sender?.address ?? '', fields.preview ?? '',
-                fields.bodyText ?? '', fields.receivedAt ?? null, fields.hasAttachments ?? false, fields.isRead ?? false, JSON.stringify(present)]);
+            [
+                accountId,
+                message.id,
+                fields.subject ?? '',
+                fields.sender?.name ?? '',
+                fields.sender?.address ?? '',
+                fields.preview ?? '',
+                fields.bodyText ?? '',
+                fields.receivedAt ?? null,
+                fields.hasAttachments ?? false,
+                fields.isRead ?? false,
+                JSON.stringify(present),
+            ],
+        );
     }
 
     async function list(userId: string, filters: MailFilters = defaultFilters) {
         const direction = filters.sort === 'oldest' ? 'ASC' : 'DESC';
-        const result = await pool.query(`SELECT e.email_id AS id, e.account_id AS "accountId", e.subject, e.sender_name AS "senderName",
+        const result = await pool.query(
+            `SELECT e.email_id AS id, e.account_id AS "accountId", e.subject, e.sender_name AS "senderName",
                 e.sender_address AS "senderAddress", e.preview, e.received_at AS "receivedAt", e.has_attachments AS "hasAttachments", e.is_read AS "isRead"
             FROM emails e JOIN mail_accounts a ON a.account_id = e.account_id
             WHERE a.user_id = $1
@@ -43,26 +57,47 @@ export function createEmailRepository(pool: Pool) {
             AND (NOT $3::boolean OR NOT e.is_read)
             AND ($4 = '' OR strpos(lower(e.subject || ' ' || e.sender_name || ' ' || e.sender_address || ' ' || e.body_text), lower($4)) > 0)
             ORDER BY e.received_at ${direction} NULLS LAST, e.email_id LIMIT ${PAGE_SIZE + 1} OFFSET $5`,
-            [userId, filters.accountId, filters.unreadOnly, filters.search, filters.offset]);
+            [userId, filters.accountId, filters.unreadOnly, filters.search, filters.offset],
+        );
         return { emails: result.rows.slice(0, PAGE_SIZE), hasMore: result.rows.length > PAGE_SIZE };
     }
 
     async function get(userId: string, id: string) {
-        const result = await pool.query(`SELECT e.email_id AS id, e.account_id AS "accountId", e.provider_id AS "providerId", e.subject,
+        const result = await pool.query(
+            `SELECT e.email_id AS id, e.account_id AS "accountId", e.provider_id AS "providerId", e.subject,
                 e.sender_name AS "senderName", e.sender_address AS "senderAddress", e.preview, e.body_text AS body,
                 e.received_at AS "receivedAt", e.has_attachments AS "hasAttachments", e.is_read AS "isRead",
                 a.email AS "accountEmail", a.provider, a.color AS "accountColor", a.is_demo AS "isDemo"
-            FROM emails e JOIN mail_accounts a ON a.account_id = e.account_id WHERE e.email_id = $1 AND a.user_id = $2`, [id, userId]);
-        return result.rows[0] as undefined | {
-            id: string; accountId: string; providerId: string; subject: string; senderName: string; senderAddress: string; preview: string;
-            body: string; receivedAt: Date | null; hasAttachments: boolean; isRead: boolean;
-            accountEmail: string; provider: 'outlook' | 'gmail'; accountColor: string; isDemo: boolean;
-        };
+            FROM emails e JOIN mail_accounts a ON a.account_id = e.account_id WHERE e.email_id = $1 AND a.user_id = $2`,
+            [id, userId],
+        );
+        return result.rows[0] as
+            | undefined
+            | {
+                  id: string;
+                  accountId: string;
+                  providerId: string;
+                  subject: string;
+                  senderName: string;
+                  senderAddress: string;
+                  preview: string;
+                  body: string;
+                  receivedAt: Date | null;
+                  hasAttachments: boolean;
+                  isRead: boolean;
+                  accountEmail: string;
+                  provider: 'outlook' | 'gmail';
+                  accountColor: string;
+                  isDemo: boolean;
+              };
     }
 
     async function conversation(emailId: string) {
-        const result = await pool.query(`SELECT action, payload, state, created_at AS "createdAt"
-            FROM outgoing_messages WHERE email_id = $1 AND action <> 'compose' ORDER BY created_at DESC LIMIT 50`, [emailId]);
+        const result = await pool.query(
+            `SELECT action, payload, state, created_at AS "createdAt"
+            FROM outgoing_messages WHERE email_id = $1 AND action <> 'compose' ORDER BY created_at DESC LIMIT 50`,
+            [emailId],
+        );
         return result.rows;
     }
 
@@ -73,13 +108,22 @@ export function createEmailRepository(pool: Pool) {
     // Reserving a request ID makes a retried send harmless: an accepted request is never sent twice.
     async function reserveSend(requestId: string, accountId: string, emailId: string | null, action: OutgoingAction, payload: unknown) {
         const body = JSON.stringify(payload);
-        const inserted = await pool.query(`INSERT INTO outgoing_messages (request_id, account_id, email_id, action, payload, state)
-            VALUES ($1,$2,$3,$4,$5::jsonb,'pending') ON CONFLICT DO NOTHING RETURNING request_id`, [requestId, accountId, emailId, action, body]);
+        const inserted = await pool.query(
+            `INSERT INTO outgoing_messages (request_id, account_id, email_id, action, payload, state)
+            VALUES ($1,$2,$3,$4,$5::jsonb,'pending') ON CONFLICT DO NOTHING RETURNING request_id`,
+            [requestId, accountId, emailId, action, body],
+        );
         if (inserted.rowCount) return true;
-        const { rows } = await pool.query(`SELECT state, (account_id = $2 AND action = $3 AND payload = $4::jsonb AND email_id IS NOT DISTINCT FROM $5::uuid) AS same
-            FROM outgoing_messages WHERE request_id = $1`, [requestId, accountId, action, body, emailId]);
+        const { rows } = await pool.query(
+            `SELECT state, (account_id = $2 AND action = $3 AND payload = $4::jsonb AND email_id IS NOT DISTINCT FROM $5::uuid) AS same
+            FROM outgoing_messages WHERE request_id = $1`,
+            [requestId, accountId, action, body, emailId],
+        );
         if (rows[0]?.same && rows[0].state === 'accepted') return false;
-        throw new MailError(409, 'This send request was already submitted. Check your Sent folder in the mail provider before sending again.');
+        throw new MailError(
+            409,
+            'This send request was already submitted. Check your Sent folder in the mail provider before sending again.',
+        );
     }
 
     async function sendState(requestId: string, state: OutgoingState) {

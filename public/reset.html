@@ -1,48 +1,58 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light dark">
-  <meta name="referrer" content="no-referrer">
-  <title>Choose a new password · Mailbridge</title>
-  <link rel="icon" href="assets/logo-dark.svg" type="image/svg+xml">
-  <script src="js/theme.js"></script>
-  <link rel="stylesheet" href="css/tokens.css">
-  <link rel="stylesheet" href="css/components.css">
-  <link rel="stylesheet" href="css/auth.css">
-  <script src="js/core.js" defer></script>
-  <script src="js/auth.js" defer></script>
-</head>
-<body data-public>
-  <main class="auth">
-    <section class="auth__card" aria-labelledby="title">
-      <div class="auth__head">
-        <h1 class="auth__title" id="title">Choose a new password</h1>
-        <p class="muted">You will be signed out everywhere else.</p>
-      </div>
-      <div id="form-message" class="banner banner--error" role="alert" tabindex="-1" hidden></div>
-      <div id="form-done" class="banner banner--success" role="status" hidden></div>
-      <form class="auth__form" data-auth="reset" novalidate>
-        <div class="field">
-          <label class="label" for="password">New password</label>
-          <div class="input-group">
-            <input class="input" id="password" name="password" type="password" autocomplete="new-password" minlength="12" maxlength="1024" required aria-describedby="password-help">
-            <button type="button" class="icon-btn" data-toggle-password aria-label="Show password" aria-pressed="false"></button>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <meta name="referrer" content="no-referrer">
+    <title>Choose a new password · Mailbridge</title>
+    <link rel="icon" href="assets/logo-dark.svg" type="image/svg+xml">
+    <script src="js/theme.js"></script>
+    <link rel="stylesheet" href="css/tokens.css">
+    <link rel="stylesheet" href="css/components.css">
+    <link rel="stylesheet" href="css/auth.css">
+    <script src="js/core.js" defer></script>
+    <script src="js/auth.js" defer></script>
+  </head>
+  <body data-public>
+    <main class="auth">
+      <section class="auth__card" aria-labelledby="title">
+        <div class="auth__head">
+          <h1 class="auth__title" id="title">Choose a new password</h1>
+          <p class="muted">You will be signed out everywhere else.</p>
+        </div>
+        <div id="form-message" class="banner banner--error" role="alert" tabindex="-1" hidden></div>
+        <div id="form-done" class="banner banner--success" role="status" hidden></div>
+        <form class="auth__form" data-auth="reset" novalidate>
+          <div class="field">
+            <label class="label" for="password">New password</label>
+            <div class="input-group">
+              <input
+                class="input"
+                id="password"
+                name="password"
+                type="password"
+                autocomplete="new-password"
+                minlength="12"
+                maxlength="1024"
+                required
+                aria-describedby="password-help"
+              >
+              <button type="button" class="icon-btn" data-toggle-password aria-label="Show password" aria-pressed="false"></button>
+            </div>
+            <p class="help" id="password-help">At least 12 characters.</p>
           </div>
-          <p class="help" id="password-help">At least 12 characters.</p>
+          <div class="field">
+            <label class="label" for="confirm">Confirm new password</label>
+            <input class="input" id="confirm" name="confirm" type="password" autocomplete="new-password" maxlength="1024" required>
+          </div>
+          <button class="btn btn--primary btn--lg btn--block" type="submit">Save new password</button>
+        </form>
+        <div class="auth__links">
+          <a href="index.html" id="back-link">Back to sign in</a>
+          <a href="forgot.html" id="request-link" hidden>Request a new link</a>
         </div>
-        <div class="field">
-          <label class="label" for="confirm">Confirm new password</label>
-          <input class="input" id="confirm" name="confirm" type="password" autocomplete="new-password" maxlength="1024" required>
-        </div>
-        <button class="btn btn--primary btn--lg btn--block" type="submit">Save new password</button>
-      </form>
-      <div class="auth__links">
-        <a href="index.html" id="back-link">Back to sign in</a>
-        <a href="forgot.html" id="request-link" hidden>Request a new link</a>
-      </div>
-    </section>
-  </main>
-</body>
+      </section>
+    </main>
+  </body>
 </html>

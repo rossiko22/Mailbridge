@@ -1,4 +1,4 @@
-import type {SafeUser} from "../modules/users/users.types.js";
+import type { SafeUser } from '../modules/users/users.types.js';
 
 declare global {
     namespace Express {
@@ -7,5 +7,3 @@ declare global {
         }
     }
 }
-
-export {};

@@ -1,46 +1,55 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light dark">
-  <title>Sign in · Mailbridge</title>
-  <link rel="icon" href="assets/logo-dark.svg" type="image/svg+xml">
-  <script src="js/theme.js"></script>
-  <link rel="stylesheet" href="css/tokens.css">
-  <link rel="stylesheet" href="css/components.css">
-  <link rel="stylesheet" href="css/auth.css">
-  <script src="js/core.js" defer></script>
-  <script src="js/auth.js" defer></script>
-</head>
-<body data-public>
-  <main class="auth">
-    <section class="auth__card" aria-labelledby="title">
-      <div class="auth__head">
-        <h1 class="auth__title" id="title">Sign in</h1>
-        <p class="muted">to your combined inbox</p>
-      </div>
-      <div id="form-message" class="banner banner--error" role="alert" tabindex="-1" hidden></div>
-      <form class="auth__form" data-auth="login" novalidate>
-        <div class="field">
-          <label class="label" for="email">Email</label>
-          <input class="input" id="email" name="email" type="email" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>Sign in · Mailbridge</title>
+    <link rel="icon" href="assets/logo-dark.svg" type="image/svg+xml">
+    <script src="js/theme.js"></script>
+    <link rel="stylesheet" href="css/tokens.css">
+    <link rel="stylesheet" href="css/components.css">
+    <link rel="stylesheet" href="css/auth.css">
+    <script src="js/core.js" defer></script>
+    <script src="js/auth.js" defer></script>
+  </head>
+  <body data-public>
+    <main class="auth">
+      <section class="auth__card" aria-labelledby="title">
+        <div class="auth__head">
+          <h1 class="auth__title" id="title">Sign in</h1>
+          <p class="muted">to your combined inbox</p>
         </div>
-        <div class="field">
-          <label class="label" for="password">Password</label>
-          <div class="input-group">
-            <input class="input" id="password" name="password" type="password" autocomplete="current-password" required>
-            <button type="button" class="icon-btn" data-toggle-password aria-label="Show password" aria-pressed="false"></button>
+        <div id="form-message" class="banner banner--error" role="alert" tabindex="-1" hidden></div>
+        <form class="auth__form" data-auth="login" novalidate>
+          <div class="field">
+            <label class="label" for="email">Email</label>
+            <input
+              class="input"
+              id="email"
+              name="email"
+              type="email"
+              autocomplete="username"
+              autocapitalize="none"
+              spellcheck="false"
+              required
+            >
           </div>
+          <div class="field">
+            <label class="label" for="password">Password</label>
+            <div class="input-group">
+              <input class="input" id="password" name="password" type="password" autocomplete="current-password" required>
+              <button type="button" class="icon-btn" data-toggle-password aria-label="Show password" aria-pressed="false"></button>
+            </div>
+          </div>
+          <button class="btn btn--primary btn--lg btn--block" type="submit">Sign in</button>
+        </form>
+        <div class="auth__links">
+          <a href="forgot.html">Forgot your password?</a>
+          <a href="register.html" data-needs-registration hidden>Create account</a>
         </div>
-        <button class="btn btn--primary btn--lg btn--block" type="submit">Sign in</button>
-      </form>
-      <div class="auth__links">
-        <a href="forgot.html">Forgot your password?</a>
-        <a href="register.html" data-needs-registration hidden>Create account</a>
-      </div>
-      <noscript><p class="muted">JavaScript is required to sign in.</p></noscript>
-    </section>
-  </main>
-</body>
+        <noscript><p class="muted">JavaScript is required to sign in.</p></noscript>
+      </section>
+    </main>
+  </body>
 </html>

@@ -10,8 +10,10 @@
       if (saved === 'dark' || saved === 'light') localStorage.setItem(storageKey, saved);
       localStorage.removeItem(legacyKey);
     }
-    theme = saved === 'dark' || saved === 'light' ? saved : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-  } catch { /* Storage may be disabled; the current page still works. */ }
+    theme = saved === 'dark' || saved === 'light' ? saved : matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  } catch {
+    /* Storage may be disabled; the current page still works. */
+  }
 
   function apply() {
     document.documentElement.dataset.theme = theme;
@@ -26,7 +28,11 @@
 
   function set(next) {
     theme = next === 'dark' ? 'dark' : 'light';
-    try { localStorage.setItem(storageKey, theme); } catch { /* ignore */ }
+    try {
+      localStorage.setItem(storageKey, theme);
+    } catch {
+      /* ignore */
+    }
     apply();
   }
 

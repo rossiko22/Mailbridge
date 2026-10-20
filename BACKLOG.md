@@ -25,3 +25,6 @@ Nothing here is built without the owner choosing it first.
 - [ ] Move the Gmail quota budget into Postgres once there is more than one process
 - [ ] Breached-password check at sign-up (k-anonymity range query, needs a decision on calling an external service)
 - [ ] Alerts on audit-log spikes (part of the server-security phase)
+- [ ] Throttle `GET /accounts/callback/:provider` per user (CodeQL alert #7; low risk: signed-in only, one-time OAuth state)
+- [ ] A general per-user limit on signed-in read routes (inbox, search), so a stolen session cannot load the database
+- [ ] Drop the dev dependency `@types/argon2`: argon2 ships its own types (`argon2.d.cts`)

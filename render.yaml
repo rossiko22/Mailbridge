@@ -17,7 +17,8 @@ services:
     plan: free
     region: frankfurt
     # The free plan has no pre-deploy step, so migrations run on every start.
-    dockerCommand: npm run start:render
+    # npm is not in the runtime image; the same two steps as "npm run start:render".
+    dockerCommand: sh -c "node dist/scripts/migrate.js && node dist/server.js"
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV

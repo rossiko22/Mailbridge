@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
-import type { CredentialStore, ProviderId } from '../../integrations/mail/types.js';
+import type { CredentialStore, ProviderId, StoredCredentials } from '../../integrations/mail/types.js';
 import { withTransaction } from '../../config/database.js';
-import { tokenVault } from '../../security/token-vault.js';
+import type { TokenVault } from '../../security/token-vault.js';
 
 // Colors are CSS classes in the design system; accounts get the first unused one.
 export const accountColors = ['blue', 'teal', 'purple', 'orange', 'green', 'pink', 'red', 'gray'] as const;
@@ -27,7 +27,7 @@ const columns = `a.account_id AS id, a.provider, a.email, a.display_name AS "dis
 const counts = `LEFT JOIN LATERAL (SELECT count(*) AS total, count(*) FILTER (WHERE NOT e.is_read) AS unread
     FROM emails e WHERE e.account_id = a.account_id) c ON TRUE`;
 
-export function createAccountsRepository(pool: Pool, secret: string) {
+export function createAccountsRepository(pool: Pool, vault: TokenVault) {
     async function list(userId: string): Promise<Account[]> {
         const { rows } = await pool.query<Account>(
             `SELECT ${columns} FROM mail_accounts a ${counts} WHERE a.user_id = $1 ORDER BY a.created_at, a.account_id`,
@@ -53,7 +53,7 @@ export function createAccountsRepository(pool: Pool, secret: string) {
                 [userId, provider, email],
             );
             const id = existing.rows[0]?.account_id ?? randomUUID();
-            const encrypted = tokenVault(secret, id).encrypt(credentials);
+            const encrypted = vault.seal(credentials, id);
             if (existing.rows[0]) {
                 await client.query(
                     `UPDATE mail_accounts SET credentials=$2, display_name=$3, needs_reconnect=FALSE, last_error=NULL
@@ -87,32 +87,65 @@ export function createAccountsRepository(pool: Pool, secret: string) {
         ]);
     }
 
-    // The account row is locked while credentials may change, so two refreshes never race.
+    // Writes `next` only if the row still holds `expected`, so a concurrent refresh is never overwritten blindly.
+    async function swapCredentials(accountId: string, expected: string, next: string): Promise<boolean> {
+        const result = await pool.query('UPDATE mail_accounts SET credentials=$3 WHERE account_id=$1 AND credentials=$2', [
+            accountId,
+            expected,
+            next,
+        ]);
+        return (result.rowCount ?? 0) > 0;
+    }
+
+    // Reads without a lock: no database connection is held while a provider talks to the network.
     const credentialStore: CredentialStore = {
-        async withCredentials(accountId, work) {
-            const client = await pool.connect();
-            try {
-                await client.query('BEGIN');
-                const { rows } = await client.query<{ credentials: string | null }>(
-                    'SELECT credentials FROM mail_accounts WHERE account_id=$1 FOR UPDATE',
-                    [accountId],
-                );
-                if (!rows[0]) throw new Error('Account not found');
-                const vault = tokenVault(secret, accountId);
-                const result = await work(rows[0].credentials ? vault.decrypt(rows[0].credentials) : null, async next => {
-                    await client.query('UPDATE mail_accounts SET credentials=$2 WHERE account_id=$1', [accountId, vault.encrypt(next)]);
-                });
-                await client.query('COMMIT');
-                return result;
-            } catch (error) {
-                await client.query('ROLLBACK');
-                throw error;
-            } finally {
-                client.release();
-            }
+        async load(accountId): Promise<StoredCredentials | null> {
+            const { rows } = await pool.query<{ credentials: string | null }>('SELECT credentials FROM mail_accounts WHERE account_id=$1', [
+                accountId,
+            ]);
+            if (!rows[0]) throw new Error('Account not found');
+            let sealed = rows[0].credentials;
+            if (!sealed) return null;
+            const opened = vault.open(sealed, accountId);
+            const replace = async (next: string) => {
+                const resealed = vault.seal(next, accountId);
+                const saved = await swapCredentials(accountId, sealed!, resealed);
+                if (saved) sealed = resealed;
+                return saved;
+            };
+            // Sealed with an older key: move it to the current one while it is at hand.
+            if (opened.stale) await replace(opened.value);
+            return { value: opened.value, replace };
         },
     };
 
-    return { list, get, upsertConnected, remove, markError, credentialStore };
+    // Re-encrypts every credential still sealed with an older key or format, in batches. Used when rotating
+    // TOKEN_ENCRYPTION_KEY; afterwards TOKEN_ENCRYPTION_KEY_PREVIOUS can be removed.
+    async function resealAll(batchSize = 100): Promise<{ resealed: number; failed: number }> {
+        let resealed = 0;
+        let failed = 0;
+        const skip: string[] = [];
+        for (;;) {
+            const { rows } = await pool.query<{ accountId: string; credentials: string }>(
+                `SELECT account_id AS "accountId", credentials FROM mail_accounts
+                WHERE credentials IS NOT NULL AND credentials NOT LIKE $1 AND NOT (account_id = ANY($2::uuid[]))
+                ORDER BY account_id LIMIT $3`,
+                [`v2.${vault.keyId}.%`, skip, batchSize],
+            );
+            if (!rows.length) return { resealed, failed };
+            for (const row of rows) {
+                try {
+                    const opened = vault.open(row.credentials, row.accountId);
+                    if (await swapCredentials(row.accountId, row.credentials, vault.seal(opened.value, row.accountId))) resealed++;
+                } catch {
+                    // Not readable with any configured key: the account will have to be reconnected.
+                    failed++;
+                    skip.push(row.accountId);
+                }
+            }
+        }
+    }
+
+    return { list, get, upsertConnected, remove, markError, credentialStore, resealAll };
 }
 export type AccountsRepository = ReturnType<typeof createAccountsRepository>;

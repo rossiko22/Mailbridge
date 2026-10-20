@@ -21,6 +21,7 @@ import { createEmailService } from './modules/emails/emails.service.js';
 import { createUserRepository } from './modules/users/users.repository.js';
 import { createUserRouter } from './modules/users/users.routes.js';
 import { createUserService } from './modules/users/users.service.js';
+import { createTokenVault } from './security/token-vault.js';
 
 const publicDirectory = fileURLToPath(new URL('../public/', import.meta.url));
 
@@ -105,7 +106,7 @@ export function createApp({ pool, env, logger }: AppDependencies) {
 
     app.use('/users', createUserRouter({ users: userService, requireAuth: authMiddleware.requireAuth }));
 
-    const accounts = createAccountsRepository(pool, env.TOKEN_ENCRYPTION_KEY);
+    const accounts = createAccountsRepository(pool, createTokenVault(env.TOKEN_ENCRYPTION_KEY, env.TOKEN_ENCRYPTION_KEY_PREVIOUS));
     const registry = createMailRegistry({
         outlook: env.MICROSOFT ? { ...env.MICROSOFT, redirectUri: `${env.PUBLIC_ORIGIN}/accounts/callback/outlook` } : undefined,
         gmail: env.GOOGLE ? { ...env.GOOGLE, redirectUri: `${env.PUBLIC_ORIGIN}/accounts/callback/gmail` } : undefined,

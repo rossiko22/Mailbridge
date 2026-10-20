@@ -11,7 +11,7 @@
     "test:integration": "node --import tsx --test --test-concurrency=1 tests/integration/*.test.ts",
     "test:e2e": "node --import tsx --test --test-concurrency=1 --test-timeout=60000 tests/e2e/*.test.ts",
     "test:coverage": "node --import tsx --test --test-concurrency=1 --experimental-test-coverage --test-coverage-include='src/**' --test-coverage-exclude='src/scripts/**' --test-coverage-lines=90 --test-coverage-branches=75 --test-coverage-functions=85 tests/*.test.ts tests/integration/*.test.ts",
-    "test:all": "npm test && npm run test:integration && npm run test:e2e",
+    "test:all": "npm test && npm run test:integration && npm run test:e2e && npm run test:e2e:firefox",
     "dev": "tsx watch --include .env src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
@@ -22,7 +22,8 @@
     "admin:reset-password": "node dist/scripts/reset-password.js",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "admin:reseal-credentials": "node dist/scripts/reseal-credentials.js"
+    "admin:reseal-credentials": "node dist/scripts/reseal-credentials.js",
+    "test:e2e:firefox": "E2E_BROWSER=firefox node --import tsx --test --test-concurrency=1 --test-timeout=60000 tests/e2e/*.test.ts"
   },
   "repository": {
     "type": "git",

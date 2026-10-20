@@ -175,7 +175,7 @@ kbd, code { font-family: var(--font-mono); font-size: var(--text-xs); }
 .tabs { display: inline-flex; gap: var(--space-1); }
 .tab { min-height: 28px; padding: 0 var(--space-3); border: 0; border-bottom: 2px solid transparent; border-radius: var(--radius-sm) var(--radius-sm) 0 0; background: transparent; color: var(--text-muted); font-size: var(--text-md); }
 .tab:hover { color: var(--text); background: var(--surface-hover); }
-.tab[aria-selected="true"] { color: var(--text); font-weight: var(--weight-semibold); border-bottom-color: var(--brand); }
+.tab[aria-selected="true"], .tab[aria-pressed="true"] { color: var(--text); font-weight: var(--weight-semibold); border-bottom-color: var(--brand); }
 
 /* ---------- Dialog ---------- */
 .dialog { width: min(680px, calc(100vw - 2 * var(--space-4))); max-height: calc(100dvh - 2 * var(--space-4)); padding: 0; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); color: var(--text); box-shadow: var(--shadow-dialog); }

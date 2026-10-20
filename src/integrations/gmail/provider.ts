@@ -58,7 +58,7 @@ export function createGmailProvider(config: GmailConfig, store: CredentialStore,
             if (!current) throw reconnect();
             const stored = JSON.parse(current) as Stored;
             if (stored.expiresAt - 60_000 > now()) return stored.accessToken;
-            let result;
+            let result: Awaited<ReturnType<typeof token>>;
             try { result = await token({ grant_type: 'refresh_token', refresh_token: stored.refreshToken }); }
             catch { throw new MailError(502, 'Could not reach Google to renew the sign-in. Try again shortly.'); }
             // invalid_grant: the person revoked access or the refresh token expired.

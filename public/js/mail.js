@@ -420,7 +420,7 @@
     dialog.showModal(); composeBody.querySelector('#c-to').focus();
   }
 
-  dialog.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', () => { if (!composeBusy) dialog.close(); }));
+  for (const button of dialog.querySelectorAll('[data-close]')) button.addEventListener('click', () => { if (!composeBusy) dialog.close(); });
   dialog.addEventListener('cancel', event => { if (composeBusy) event.preventDefault(); });
   composeForm.addEventListener('input', () => { if (composeAttempted) { composeRequest = crypto.randomUUID(); composeAttempted = false; } });
   composeForm.addEventListener('submit', async event => {
@@ -478,13 +478,13 @@
   // ---------- Controls ----------
   for (const tab of document.querySelectorAll('[data-filter]')) tab.addEventListener('click', () => {
     state.filter = tab.dataset.filter;
-    document.querySelectorAll('[data-filter]').forEach(item => item.setAttribute('aria-selected', String(item === tab)));
+    for (const item of document.querySelectorAll('[data-filter]')) item.setAttribute('aria-selected', String(item === tab));
     loadList();
   });
   popover($('#sort-button'), $('#sort-menu'));
   for (const item of document.querySelectorAll('[data-sort]')) item.addEventListener('click', () => {
     state.sort = item.dataset.sort;
-    document.querySelectorAll('[data-sort]').forEach(option => option.setAttribute('aria-checked', String(option === item)));
+    for (const option of document.querySelectorAll('[data-sort]')) option.setAttribute('aria-checked', String(option === item));
     loadList();
   });
   $('#more-button').addEventListener('click', () => loadList({ reset: false }));

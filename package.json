@@ -16,10 +16,12 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
-    "check": "npm run typecheck && npm test && npm run build",
+    "check": "npm run lint && npm run typecheck && npm test && npm run build",
     "migration:prod": "node dist/scripts/migrate.js",
     "start:render": "node dist/scripts/migrate.js && node dist/server.js",
-    "admin:reset-password": "node dist/scripts/reset-password.js"
+    "admin:reset-password": "node dist/scripts/reset-password.js",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write ."
   },
   "repository": {
     "type": "git",
@@ -34,6 +36,7 @@
   },
   "homepage": "https://github.com/rossiko22/Mailbridge#readme",
   "devDependencies": {
+    "@biomejs/biome": "2.5.15",
     "@types/argon2": "^0.14.1",
     "@types/connect-pg-simple": "^7.0.3",
     "@types/express": "^5.0.6",

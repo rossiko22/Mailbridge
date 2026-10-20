@@ -32,7 +32,7 @@ export function createAuthMiddleware(userRepository: UserRepository, now: () => 
 
             const user = await userRepository.findById(userId);
 
-            if (!user || !user.isActive) {
+            if (!user?.isActive) {
                 res.status(401).json({
                     message: "Authentication required",
                 })

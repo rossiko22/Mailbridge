@@ -186,10 +186,11 @@
   function appearanceCard() {
     const { section, body } = card('appearance', 'Appearance', 'Choose how Mailbridge looks on this device.');
     const group = el('div', 'tabs'); group.setAttribute('role', 'group'); group.setAttribute('aria-label', 'Theme');
-    const paint = () => group.querySelectorAll('.tab').forEach(t => t.setAttribute('aria-pressed', String(t.dataset.themeSet === window.Theme.get())));
+    // Toggle buttons in a group report their state with aria-pressed (aria-selected belongs to tabs and options).
+    const paint = () => { for (const t of group.querySelectorAll('.tab')) t.setAttribute('aria-pressed', String(t.dataset.themeSet === window.Theme.get())); };
     for (const [value, label] of [['light', 'Light'], ['dark', 'Dark']]) { const b = el('button', 'btn', label); b.type = 'button'; b.className = 'tab'; b.dataset.themeSet = value; group.append(b); }
-    group.addEventListener('click', () => queueMicrotask(() => { group.querySelectorAll('.tab').forEach(t => t.setAttribute('aria-selected', String(t.dataset.themeSet === window.Theme.get()))); }));
-    group.querySelectorAll('.tab').forEach(t => t.setAttribute('aria-selected', String(t.dataset.themeSet === window.Theme.get())));
+    group.addEventListener('click', () => queueMicrotask(paint));
+    paint();
     body.append(group); return section;
   }
 
@@ -204,7 +205,7 @@
       link.addEventListener('click', () => setNav(false));
       nav.append(link); root.append(builders[id]());
     }
-    const mark = () => { const id = location.hash.slice(1) || 'profile'; nav.querySelectorAll('a').forEach(a => a.toggleAttribute('aria-current', a.hash === `#${id}`)); nav.querySelectorAll('a').forEach(a => { if (a.hash === `#${id}`) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); }); };
+    const mark = () => { const id = location.hash.slice(1) || 'profile'; for (const a of nav.querySelectorAll('a')) { if (a.hash === `#${id}`) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); } };
     window.addEventListener('hashchange', mark); mark();
   }
   start();

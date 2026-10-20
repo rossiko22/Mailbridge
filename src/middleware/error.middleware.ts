@@ -3,7 +3,7 @@ import { MailError } from "../integrations/mail/errors.js";
 
 export function errorMiddleware(
     error: unknown,
-    req: Request,
+    _req: Request,
     res: Response,
     next: NextFunction
 ): void {

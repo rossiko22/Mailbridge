@@ -1,4 +1,4 @@
-import { ConfidentialClientApplication, InteractionRequiredAuthError } from '@azure/msal-node';
+import { type AuthenticationResult, ConfidentialClientApplication, InteractionRequiredAuthError } from '@azure/msal-node';
 import { createHash, randomBytes } from 'node:crypto';
 import { MailError } from '../mail/errors.js';
 import type { ConnectedProfile, CredentialStore, MailClient, MailProvider, PendingAuth } from '../mail/types.js';
@@ -32,7 +32,7 @@ export function createOutlookProvider(config: OutlookConfig, store: CredentialSt
 
     async function complete(code: string, pending: PendingAuth): Promise<ConnectedProfile> {
         const msal = factory(config);
-        let result;
+        let result: AuthenticationResult | null;
         try { result = await msal.acquireTokenByCode({ code, codeVerifier: pending.verifier, scopes: outlookScopes, redirectUri: config.redirectUri }); }
         catch { throw new MailError(502, 'Microsoft did not accept the sign-in. Check the app registration and try again.'); }
         if (!result?.accessToken || !result.account) throw new MailError(502, 'Microsoft did not provide an account and access token.');
@@ -56,7 +56,7 @@ export function createOutlookProvider(config: OutlookConfig, store: CredentialSt
             cache.deserialize(stored.cache);
             const account = await cache.getAccountByHomeId(stored.homeAccountId);
             if (!account) throw reconnect();
-            let result;
+            let result: AuthenticationResult | null;
             try { result = await msal.acquireTokenSilent({ account, scopes: outlookScopes }); }
             catch (error) {
                 if (error instanceof InteractionRequiredAuthError) throw reconnect();

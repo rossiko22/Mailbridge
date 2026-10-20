@@ -1,9 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { Mailer } from '../../integrations/mailer.js';
 import { hashPassword } from '../../security/password.js';
-import type * as repository from '../users/users.repository.js';
-
-type UserRepository = typeof repository;
+import type { UserRepository } from '../users/users.repository.js';
 
 export const RESET_MINUTES = 30;
 const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');

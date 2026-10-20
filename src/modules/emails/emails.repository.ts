@@ -1,6 +1,7 @@
 import type { Pool, PoolClient } from 'pg';
 import { MailError } from '../../integrations/mail/errors.js';
-import type { SyncedMessage } from '../../integrations/mail/types.js';
+import { withTransaction } from '../../config/database.js';
+import type { MailBody, SyncedMessage, SyncPage } from '../../integrations/mail/types.js';
 import { defaultFilters, PAGE_SIZE, type MailFilters } from './emails.types.js';
 
 export type OutgoingAction = 'compose' | 'reply' | 'forward';
@@ -130,6 +131,42 @@ export function createEmailRepository(pool: Pool) {
         await pool.query('UPDATE outgoing_messages SET state = $2 WHERE request_id = $1', [requestId, state]);
     }
 
-    return { save, list, get, conversation, setRead, reserveSend, sendState };
+    // Fetches and stores one sync page while holding a per-account lock, so overlapping syncs cannot interleave.
+    // Returns null when another sync of the same account is already running.
+    async function syncLocked(accountId: string, fetchPage: (cursor: string | null) => Promise<SyncPage>): Promise<SyncPage | null> {
+        return withTransaction(pool, async db => {
+            const lock = await db.query('SELECT pg_try_advisory_xact_lock(hashtext($1)) AS locked', [`mail-sync:${accountId}`]);
+            if (!lock.rows[0].locked) return null;
+            const state = await db.query('SELECT sync_cursor FROM mail_accounts WHERE account_id = $1', [accountId]);
+            const page = await fetchPage(state.rows[0]?.sync_cursor ?? null);
+            for (const message of page.messages) await save(db, accountId, message);
+            await db.query('UPDATE mail_accounts SET sync_cursor = $2, synced_at = NOW(), last_error = NULL WHERE account_id = $1', [
+                accountId,
+                page.cursor,
+            ]);
+            return page;
+        });
+    }
+
+    async function resetSyncCursor(accountId: string) {
+        await pool.query('UPDATE mail_accounts SET sync_cursor = NULL WHERE account_id = $1', [accountId]);
+    }
+
+    async function savedBody(emailId: string): Promise<MailBody | undefined> {
+        const { rows } = await pool.query<MailBody>('SELECT content_type AS "contentType", content FROM email_bodies WHERE email_id = $1', [
+            emailId,
+        ]);
+        return rows[0];
+    }
+
+    async function saveBody(emailId: string, body: MailBody) {
+        await pool.query(
+            `INSERT INTO email_bodies (email_id, content_type, content) VALUES ($1,$2,$3)
+            ON CONFLICT (email_id) DO UPDATE SET content_type = EXCLUDED.content_type, content = EXCLUDED.content, fetched_at = NOW()`,
+            [emailId, body.contentType, body.content],
+        );
+    }
+
+    return { list, get, conversation, setRead, reserveSend, sendState, syncLocked, resetSyncCursor, savedBody, saveBody };
 }
 export type EmailRepository = ReturnType<typeof createEmailRepository>;

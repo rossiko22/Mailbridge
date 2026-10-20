@@ -69,10 +69,11 @@ export async function startApp() {
     }) as typeof fetch;
 
     await prepareDatabase();
-    const { app } = await import('../../src/app.js');
-    const { pool } = await import('../../src/config/database.js');
+    const { createApp } = await import('../../src/app.js');
+    const { createPool } = await import('../../src/config/database.js');
     const { env } = await import('../../src/config/env.js');
-    const server = app.listen(0, '127.0.0.1');
+    const pool = createPool(env);
+    const server = createApp({ pool, env }).listen(0, '127.0.0.1');
     await once(server, 'listening');
 
     return {

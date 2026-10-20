@@ -29,6 +29,7 @@ env:
   SEMGREP_IMAGE: semgrep/semgrep:1.178.0@sha256:32e459968daabe7ab86968184a29109b9564aa00392401156f9788452b42786b
   TRIVY_IMAGE: aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa
   ACTIONLINT_IMAGE: rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+  REDOCLY_IMAGE: redocly/cli:2.62.0@sha256:4497cdb4450ed434c72821419af114ffdafa7e5bd966ade394adc50176261545
 
 jobs:
   verify:
@@ -181,6 +182,17 @@ jobs:
           persist-credentials: false
       - run: docker run --rm -v "$PWD:/repo" -w /repo "$ACTIONLINT_IMAGE" -color
 
+  contract:
+    name: API contract lint (Redocly)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      # Rules are in redocly.yaml; reviewed exceptions, each with a reason, in .redocly.lint-ignore.yaml.
+      - run: docker run --rm -v "$PWD:/spec" -w /spec "$REDOCLY_IMAGE" lint
+
   config-scan:
     name: Configuration scan (Trivy)
     runs-on: ubuntu-latest
@@ -233,7 +245,7 @@ jobs:
   publish:
     name: Publish image
     if: github.event_name == 'push'
-    needs: [verify, integration, e2e, audit, secrets, sast, workflows, config-scan, image]
+    needs: [verify, integration, e2e, audit, secrets, sast, workflows, contract, config-scan, image]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

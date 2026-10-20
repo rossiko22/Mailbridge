@@ -1,0 +1,14 @@
+# Reviewed exceptions to the Redocly rules in redocly.yaml. Each one has its reason.
+contracts/openapi.yaml:
+  operation-4xx-response:
+    # Public, takes no input: nothing a client sends can make it fail with a 4xx.
+    - '#/paths/~1auth~1config/get/responses'
+    # Browser navigation: every outcome, including bad input, is a 302 back to the app with an outcome code.
+    - '#/paths/~1accounts~1callback~1{provider}/get/responses'
+    # Takes no input; it either answers ok or fails with a 500.
+    - '#/paths/~1health/get/responses'
+  operation-2xx-response:
+    # Browser navigation: the success response is a 302 to the provider's consent screen.
+    - '#/paths/~1accounts~1connect~1{provider}/get/responses'
+    # Browser navigation: the success response is a 302 back to the app.
+    - '#/paths/~1accounts~1callback~1{provider}/get/responses'

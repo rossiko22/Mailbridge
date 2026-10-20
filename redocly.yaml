@@ -1,0 +1,11 @@
+# Lint rules for contracts/openapi.yaml (run in CI with a pinned redocly/cli image).
+# Reviewed exceptions for single operations live in .redocly.lint-ignore.yaml.
+apis:
+  mailbridge:
+    root: contracts/openapi.yaml
+extends:
+  - recommended-strict
+rules:
+  # /accounts/connect/{provider} and /accounts/{accountId}/sync never collide: accountId must be a UUID,
+  # and "connect" is not one. Express matches them in the same way.
+  no-ambiguous-paths: off

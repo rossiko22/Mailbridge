@@ -20,7 +20,7 @@ The owner reviews, tests and documents; Claude writes the code. The owner is lea
 - `src/middleware/` auth, same-site JSON (CSRF), security headers + throttle, errors, session
 - `database/migrations/` `NNN_name.sql` with `-- Up Migration` / `-- Down Migration`
 - `tests/*.test.ts` unit · `tests/integration/` real Postgres · `tests/e2e/` Playwright · `tests/support/harness.ts`
-- `contracts/` OpenAPI (planned) · `docs/` analysis, architecture, adr/ · `deploy/` Caddyfile and scripts
+- `contracts/openapi.yaml` API contract (Redocly rules in `redocly.yaml`) · `docs/` analysis, architecture, adr/ · `deploy/` Caddyfile and scripts
 
 ## Commands
 - `npm run dev`: start with reload (needs `docker compose up -d postgres mailpit`)
@@ -28,6 +28,7 @@ The owner reviews, tests and documents; Claude writes the code. The owner is lea
 - `npm run typecheck` · `npm test` · `npm run test:integration` · `npm run test:e2e` · `npm run test:coverage`
 - `npm run check`: typecheck + unit tests + build
 - Integration and e2e tests use `<POSTGRES_DB>_test`, which is created automatically
+- Lint the contract: `docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD:/spec" -w /spec redocly/cli:2.62.0@sha256:4497cdb4450ed434c72821419af114ffdafa7e5bd966ade394adc50176261545 lint`
 - gitleaks on staged changes before every commit (call docker directly, never through a shell variable; zsh will not split it):
   `docker run --rm -v "$PWD:/repo" -w /repo zricethezav/gitleaks:v8.21.2@sha256:0e99e8821643ea5b235718642b93bb32486af9c8162c8b8731f7cbdc951a7f46 protect --staged --redact -v`
 

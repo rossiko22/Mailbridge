@@ -162,3 +162,18 @@ test('every request is logged once with its request ID and path, never with secr
         assert.ok(!everything.includes(secret), `the log never contains ${secret}`);
     assert.ok(!app.logs.some(entry => (entry.req as { path?: string } | undefined)?.path === '/health'), 'health checks are not logged');
 });
+
+test('static files are revalidated (cheap 304s) while API answers are never stored', async () => {
+    const client = createClient(app.url);
+    const first = await client.get('/css/tokens.css');
+    assert.equal(first.status, 200);
+    assert.equal(first.headers.get('cache-control'), 'no-cache');
+    const etag = first.headers.get('etag');
+    assert.ok(etag);
+    // Like a browser revalidating; fetch() would otherwise add Cache-Control: no-cache, which forces a full reload.
+    const again = await client.get('/css/tokens.css', { 'If-None-Match': etag, 'Cache-Control': 'max-age=0' });
+    assert.equal(again.status, 304, 'an unchanged file is not sent again');
+    assert.equal((await client.get('/index.html')).headers.get('cache-control'), 'no-store', 'pages stay out of the back/forward cache');
+    assert.equal((await client.get('/auth/config')).headers.get('cache-control'), 'no-store');
+    assert.equal((await client.get('/.env')).status, 404, 'dotfiles are never served');
+});

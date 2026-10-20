@@ -144,3 +144,21 @@ test('sending is limited per person', async () => {
         429,
     );
 });
+
+test('every request is logged once with its request ID and path, never with secrets or query strings', async () => {
+    const { client } = await register(app, 'logged@example.com', 'a-secret-password-123');
+    const response = await client.get('/emails?search=private-words');
+    const requestId = response.headers.get('x-request-id');
+    assert.match(requestId ?? '', /^[0-9a-f-]{36}$/);
+    await client.post('/auth/login', { email: 'logged@example.com', password: 'wrong-password-456' });
+    const line = app.logs.find(entry => (entry.req as { id?: string } | undefined)?.id === requestId);
+    assert.ok(line, 'the request has a log line with the same ID as the response header');
+    assert.deepEqual(line.req, { id: requestId, method: 'GET', path: '/emails' });
+    assert.equal(line.res && (line.res as { statusCode: number }).statusCode, 200);
+    assert.ok(line.userId, 'signed-in requests carry the user ID');
+    assert.equal(line.msg, 'GET /emails 200');
+    const everything = JSON.stringify(app.logs);
+    for (const secret of ['private-words', 'a-secret-password-123', 'wrong-password-456', client.cookies.get('session') ?? 'no-cookie'])
+        assert.ok(!everything.includes(secret), `the log never contains ${secret}`);
+    assert.ok(!app.logs.some(entry => (entry.req as { path?: string } | undefined)?.path === '/health'), 'health checks are not logged');
+});

@@ -1,4 +1,5 @@
 import { Pool, type PoolClient } from 'pg';
+import type { Logger } from './logger.js';
 
 export interface DatabaseConfig {
     POSTGRES_HOST: string;
@@ -9,7 +10,7 @@ export interface DatabaseConfig {
 }
 
 // Only entry points (server, scripts, tests) create a pool; everything else receives it as a parameter.
-export function createPool(config: DatabaseConfig): Pool {
+export function createPool(config: DatabaseConfig, logger?: Pick<Logger, 'error'>): Pool {
     const pool = new Pool({
         host: config.POSTGRES_HOST,
         port: config.POSTGRES_PORT,
@@ -23,7 +24,7 @@ export function createPool(config: DatabaseConfig): Pool {
     });
     // Handles unexpected errors from connections sitting idle in the pool.
     pool.on('error', error => {
-        console.error('Unexpected PostgreSQL pool error:', error.message);
+        logger?.error({ event: 'pool-error', err: error }, 'unexpected PostgreSQL pool error');
     });
     return pool;
 }

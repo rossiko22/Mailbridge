@@ -31,14 +31,8 @@ export function errorMiddleware(error: unknown, _req: Request, res: Response, ne
         return;
     }
 
-    console.error(
-        JSON.stringify({
-            event: 'request-error',
-            requestId: res.locals.requestId,
-            name: error instanceof Error ? error.name : 'Unknown error',
-            code: error && typeof error === 'object' && 'code' in error ? error.code : undefined,
-        }),
-    );
+    // The request logger writes the error (type, code and stack, never its message) on the request's own line.
+    res.err = error instanceof Error ? error : new Error('Non-error thrown');
     sendError(res, 500, 'internal_error', 'An unexpected server error occurred.');
 }
 

@@ -55,7 +55,7 @@ export function createAudit(pool: Pool, now: () => number = Date.now) {
                     outcome,
                     req.ip ?? null,
                     (req.get('user-agent') ?? '').slice(0, 300),
-                    req.res?.locals.requestId ?? null,
+                    req.id ?? null,
                     options.target?.slice(0, 100) ?? null,
                     JSON.stringify(options.detail ?? {}),
                 ],
@@ -65,9 +65,7 @@ export function createAudit(pool: Pool, now: () => number = Date.now) {
                 await pool.query('DELETE FROM audit_events WHERE occurred_at < NOW() - make_interval(days => $1)', [AUDIT_RETENTION_DAYS]);
             }
         } catch (error) {
-            console.error(
-                JSON.stringify({ event: 'audit-write-failed', audit: event, name: error instanceof Error ? error.name : 'Unknown' }),
-            );
+            req.log?.error({ event: 'audit-write-failed', audit: event, err: error }, 'audit write failed');
         }
     }
 

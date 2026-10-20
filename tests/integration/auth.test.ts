@@ -1,4 +1,4 @@
-import { after, before, beforeEach, mock, test } from 'node:test';
+import { after, before, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createClient, errorOf, PASSWORD, register, startApp, type TestApp } from '../support/harness.js';
@@ -104,15 +104,10 @@ test('repeated failed sign-ins for one account are throttled without locking out
 
 // Without SMTP the reset link is written to the server log, which is where these tests read it.
 async function requestReset(email: string) {
-    const log = mock.method(console, 'log', () => {});
-    try {
-        const response = await createClient(app.url).post('/auth/forgot', { email });
-        await delay(50);
-        const line = log.mock.calls.map(call => String(call.arguments[0])).find(text => text.includes('Password reset link'));
-        return { response, token: line ? /#token=([\w-]+)/.exec(line)?.[1] : undefined };
-    } finally {
-        log.mock.restore();
-    }
+    const response = await createClient(app.url).post('/auth/forgot', { email });
+    await delay(50);
+    const line = app.logs.map(entry => String(entry.msg)).find(text => text.includes('Password reset link') && text.includes(email));
+    return { response, token: line ? /#token=([\w-]+)/.exec(line)?.[1] : undefined };
 }
 
 test('asking for a reset reveals nothing about whether the address has an account', async () => {

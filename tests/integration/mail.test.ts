@@ -38,7 +38,7 @@ async function demo() {
 const accountsOf = async (client: TestClient) =>
     (await (await client.get('/accounts')).json()) as { accounts: Account[]; providers: Record<string, boolean> };
 const mailOf = async (client: TestClient, query = '') =>
-    (await (await client.get(`/emails${query}`)).json()) as { emails: Mail[]; hasMore: boolean };
+    (await (await client.get(`/emails${query}`)).json()) as { emails: Mail[]; hasMore: boolean; nextCursor: string | null };
 
 // A Gmail account whose stored sign-in is still valid, so no token refresh is needed.
 async function connectGmail(userId: string, email = 'real@gmail.example') {
@@ -147,7 +147,7 @@ test("one person can never read or change another person's mail or accounts", as
     const target = (await mailOf(owner)).emails[0]!;
     const { client: intruder } = await register(app, 'intruder@example.com');
 
-    assert.deepEqual(await mailOf(intruder), { emails: [], hasMore: false });
+    assert.deepEqual(await mailOf(intruder), { emails: [], hasMore: false, nextCursor: null });
     assert.deepEqual((await accountsOf(intruder)).accounts, []);
     assert.equal((await mailOf(intruder, `?account=${accounts[0]!.id}`)).emails.length, 0);
     for (const path of ['', '/body', '/export', '/attachments'])
@@ -428,4 +428,52 @@ test('marking a message read is written back to the provider', async () => {
     assert.equal((await client.patch(`/emails/${email.id}/read`, { isRead: true })).status, 200);
     assert.equal((await client.patch(`/emails/${email.id}/read`, { isRead: true })).status, 200);
     assert.deepEqual(calls, [{ removeLabelIds: ['UNREAD'] }], 'an unchanged state is not sent again');
+});
+
+test('pages continue after the last row: no gaps or repeats, even when mail arrives in between', async () => {
+    const client = await demo();
+    const { accounts } = await accountsOf(client);
+    // 120 more messages, some sharing a timestamp, so the ID has to break ties.
+    await app.pool.query(
+        `INSERT INTO emails (account_id, provider_id, subject, received_at)
+        SELECT $1, 'bulk-' || n, 'Bulk ' || n, NOW() - make_interval(mins => n / 2) FROM generate_series(1, 120) AS n`,
+        [accounts[0]!.id],
+    );
+    const total = Number((await app.pool.query('SELECT count(*) FROM emails')).rows[0].count);
+    for (const sort of ['newest', 'oldest']) {
+        const seen: string[] = [];
+        let cursor: string | null = null;
+        for (let page = 0; page < 10; page++) {
+            const data = await mailOf(client, `?sort=${sort}${cursor ? `&cursor=${cursor}` : ''}`);
+            seen.push(...data.emails.map(email => email.id));
+            // New mail arriving after the first page must not push rows from page one onto page two.
+            if (page === 0)
+                await app.pool.query(`INSERT INTO emails (account_id, provider_id, subject, received_at) VALUES ($1, $2, 'Late', NOW())`, [
+                    accounts[0]!.id,
+                    `late-${sort}`,
+                ]);
+            assert.equal(data.hasMore, data.nextCursor !== null);
+            cursor = data.nextCursor;
+            if (!cursor) break;
+        }
+        assert.equal(new Set(seen).size, seen.length, `${sort}: no message appears twice`);
+        assert.ok(seen.length >= total, `${sort}: every message that existed at the start was listed`);
+    }
+});
+
+test('a forged or mismatched page cursor is refused without reaching the database', async () => {
+    const client = await demo();
+    const first = await mailOf(client, '?sort=newest');
+    const forged = (payload: unknown) => Buffer.from(JSON.stringify(payload)).toString('base64url');
+    for (const cursor of [
+        'not*base64',
+        forged(['newest', "2026-01-01T00:00:00.000000Z'; DROP TABLE emails; --", randomUUID()]),
+        forged(['newest', '2026-01-01', randomUUID()]),
+        forged(['newest', '2026-01-01T00:00:00.000000Z', 'not-a-uuid']),
+        forged({ sort: 'newest' }),
+    ]) {
+        const response = await client.get(`/emails?cursor=${cursor}`);
+        assert.equal(response.status, 400, cursor);
+    }
+    if (first.nextCursor) assert.equal((await client.get(`/emails?sort=oldest&cursor=${first.nextCursor}`)).status, 400);
 });

@@ -23,7 +23,7 @@
     search: '',
     sort: 'newest',
     selectedId: null,
-    offset: 0,
+    cursor: null,
     hasMore: false,
     listVersion: 0,
     detailVersion: 0,
@@ -286,10 +286,11 @@
   async function loadList({ reset = true } = {}) {
     const version = ++state.listVersion;
     if (reset) {
-      state.offset = 0;
+      state.cursor = null;
       if (!list.children.length) renderListState(true);
     }
-    const query = new URLSearchParams({ sort: state.sort, offset: String(reset ? 0 : state.offset) });
+    const query = new URLSearchParams({ sort: state.sort });
+    if (!reset && state.cursor) query.set('cursor', state.cursor);
     if (state.accountId) query.set('account', state.accountId);
     if (state.filter === 'unread') query.set('unread', 'true');
     if (state.search) query.set('search', state.search);
@@ -298,7 +299,7 @@
       if (version !== state.listVersion) return;
       if (reset) list.replaceChildren();
       for (const email of data.emails) list.append(messageNode(email));
-      state.offset = (reset ? 0 : state.offset) + data.emails.length;
+      state.cursor = data.nextCursor;
       state.hasMore = data.hasMore;
       moreWrap.hidden = !data.hasMore;
       renderListState(false);

@@ -115,3 +115,4 @@ export function createAccountsRepository(pool: Pool, secret: string) {
 
     return { list, get, upsertConnected, remove, markError, credentialStore };
 }
+export type AccountsRepository = ReturnType<typeof createAccountsRepository>;

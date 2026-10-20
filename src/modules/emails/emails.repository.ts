@@ -2,7 +2,8 @@ import type { Pool, PoolClient } from 'pg';
 import { MailError } from '../../integrations/mail/errors.js';
 import { withTransaction } from '../../config/database.js';
 import type { MailBody, SyncedMessage, SyncPage } from '../../integrations/mail/types.js';
-import { defaultFilters, PAGE_SIZE, type MailFilters } from './emails.types.js';
+import { encodeCursor } from './emails.schemas.js';
+import { defaultFilters, type MailFilters, PAGE_SIZE } from './emails.types.js';
 
 export type OutgoingAction = 'compose' | 'reply' | 'forward';
 export type OutgoingState = 'pending' | 'accepted' | 'failed' | 'unknown';
@@ -47,20 +48,46 @@ export function createEmailRepository(pool: Pool) {
         );
     }
 
+    // Keyset pagination: each page continues after the last row of the previous one, so mail arriving meanwhile
+    // never shifts or repeats rows, and a deep page costs the same as the first. Mail without a date sorts last.
     async function list(userId: string, filters: MailFilters = defaultFilters) {
-        const direction = filters.sort === 'oldest' ? 'ASC' : 'DESC';
-        const result = await pool.query(
+        const newest = filters.sort === 'newest';
+        // Only these fixed SQL fragments vary with the sort; every value is a parameter.
+        const key = newest ? "COALESCE(e.received_at, '-infinity')" : "COALESCE(e.received_at, 'infinity')";
+        const order = newest ? 'DESC' : 'ASC';
+        const after = newest ? '<' : '>';
+        const result = await pool.query<{ sortKey: string; id: string }>(
             `SELECT e.email_id AS id, e.account_id AS "accountId", e.subject, e.sender_name AS "senderName",
-                e.sender_address AS "senderAddress", e.preview, e.received_at AS "receivedAt", e.has_attachments AS "hasAttachments", e.is_read AS "isRead"
+                e.sender_address AS "senderAddress", e.preview, e.received_at AS "receivedAt", e.has_attachments AS "hasAttachments",
+                e.is_read AS "isRead",
+                CASE WHEN e.received_at IS NULL THEN $6
+                    ELSE to_char(e.received_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') END AS "sortKey"
             FROM emails e JOIN mail_accounts a ON a.account_id = e.account_id
             WHERE a.user_id = $1
             AND ($2::uuid IS NULL OR e.account_id = $2)
             AND (NOT $3::boolean OR NOT e.is_read)
             AND ($4 = '' OR strpos(lower(e.subject || ' ' || e.sender_name || ' ' || e.sender_address || ' ' || e.body_text), lower($4)) > 0)
-            ORDER BY e.received_at ${direction} NULLS LAST, e.email_id LIMIT ${PAGE_SIZE + 1} OFFSET $5`,
-            [userId, filters.accountId, filters.unreadOnly, filters.search, filters.offset],
+            AND ($5::timestamptz IS NULL OR (${key}, e.email_id) ${after} ($5::timestamptz, $7::uuid))
+            ORDER BY ${key} ${order}, e.email_id ${order}
+            LIMIT ${PAGE_SIZE + 1}`,
+            [
+                userId,
+                filters.accountId,
+                filters.unreadOnly,
+                filters.search,
+                filters.after?.key ?? null,
+                newest ? '-infinity' : 'infinity',
+                filters.after?.id ?? null,
+            ],
         );
-        return { emails: result.rows.slice(0, PAGE_SIZE), hasMore: result.rows.length > PAGE_SIZE };
+        const rows = result.rows.slice(0, PAGE_SIZE);
+        const last = rows.at(-1);
+        const hasMore = result.rows.length > PAGE_SIZE;
+        return {
+            emails: rows.map(({ sortKey: _sortKey, ...email }) => email),
+            hasMore,
+            nextCursor: hasMore && last ? encodeCursor({ sort: filters.sort, key: last.sortKey, id: last.id }) : null,
+        };
     }
 
     async function get(userId: string, id: string) {

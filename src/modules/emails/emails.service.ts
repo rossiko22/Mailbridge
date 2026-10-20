@@ -1,12 +1,11 @@
 import { MailError } from '../../integrations/mail/errors.js';
 import type { MailRegistry } from '../../integrations/mail/registry.js';
 import type { NewMessage } from '../../integrations/mail/types.js';
-import type { createAccountsRepository } from '../accounts/accounts.repository.js';
+import type { AccountsRepository } from '../accounts/accounts.repository.js';
 import type { EmailRepository, OutgoingAction } from './emails.repository.js';
 import type { MailFilters } from './emails.types.js';
 import { storedEml } from './eml.js';
 
-type AccountsRepository = ReturnType<typeof createAccountsRepository>;
 const demoSend = () =>
     new MailError(400, 'This is a demo mailbox and cannot send mail. Connect a real account to send.', false, 'demo_mailbox');
 

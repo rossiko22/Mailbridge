@@ -133,9 +133,14 @@ export function createApp({ pool, env, logger }: AppDependencies) {
 
     app.use(
         express.static(publicDirectory, {
+            // Scripts, styles and icons hold no personal data. The browser may keep them but must ask before each use
+            // (no-cache): an unchanged file costs a 304 with no body, and a deploy is picked up at once.
+            // Pages keep no-store: browsers never put such a page in the back/forward cache, so pressing Back after
+            // signing out cannot redisplay an inbox as it was rendered.
             setHeaders(res, path) {
-                if (path.endsWith('.html') || path.endsWith('.js')) res.setHeader('Cache-Control', 'no-store');
+                res.setHeader('Cache-Control', path.endsWith('.html') ? 'no-store' : 'no-cache');
             },
+            dotfiles: 'ignore',
         }),
     );
     app.use(notFoundMiddleware);

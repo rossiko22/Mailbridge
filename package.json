@@ -23,7 +23,8 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "admin:reseal-credentials": "node dist/scripts/reseal-credentials.js",
-    "test:e2e:firefox": "E2E_BROWSER=firefox node --import tsx --test --test-concurrency=1 --test-timeout=60000 tests/e2e/*.test.ts"
+    "test:e2e:firefox": "E2E_BROWSER=firefox node --import tsx --test --test-concurrency=1 --test-timeout=60000 tests/e2e/*.test.ts",
+    "test:mutation": "node --import tsx tests/mutation/run.ts"
   },
   "repository": {
     "type": "git",

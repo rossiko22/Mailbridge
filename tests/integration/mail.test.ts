@@ -464,7 +464,15 @@ test('pages continue after the last row: no gaps or repeats, even when mail arri
 
 test('a forged or mismatched page cursor is refused without reaching the database', async () => {
     const client = await demo();
+    const { accounts } = await accountsOf(client);
+    // More than one page, so the first page has a cursor to misuse.
+    await app.pool.query(
+        `INSERT INTO emails (account_id, provider_id, subject, received_at)
+        SELECT $1, 'page-' || n, 'Page ' || n, NOW() - make_interval(hours => n) FROM generate_series(1, 60) AS n`,
+        [accounts[0]!.id],
+    );
     const first = await mailOf(client, '?sort=newest');
+    assert.ok(first.nextCursor, 'the first page has a cursor');
     const forged = (payload: unknown) => Buffer.from(JSON.stringify(payload)).toString('base64url');
     for (const cursor of [
         'not*base64',
@@ -476,7 +484,7 @@ test('a forged or mismatched page cursor is refused without reaching the databas
         const response = await client.get(`/emails?cursor=${cursor}`);
         assert.equal(response.status, 400, cursor);
     }
-    if (first.nextCursor) assert.equal((await client.get(`/emails?sort=oldest&cursor=${first.nextCursor}`)).status, 400);
+    assert.equal((await client.get(`/emails?sort=oldest&cursor=${first.nextCursor}`)).status, 400, 'a cursor only works with its own sort');
 });
 
 test('search finds word prefixes in the text and parts of the subject or sender, in any language', async () => {
@@ -500,4 +508,13 @@ test('search finds word prefixes in the text and parts of the subject or sender,
     assert.deepEqual(await subjects('%'), ['100% done'], 'a lone % is not a wildcard');
     assert.deepEqual(await subjects('_'), [], '_ is not a wildcard');
     assert.deepEqual(await subjects('nothing-like-this'), []);
+});
+
+test("the repository itself refuses to remove another person's account", async () => {
+    const owner = await demo();
+    const { accounts } = await accountsOf(owner);
+    const { user: intruder } = await register(app, 'intruder@example.com');
+    const repository = createAccountsRepository(app.pool, createTokenVault(app.env.TOKEN_ENCRYPTION_KEY));
+    assert.equal(await repository.remove(intruder.userId, accounts[0]!.id), false);
+    assert.equal((await accountsOf(owner)).accounts.length, accounts.length);
 });

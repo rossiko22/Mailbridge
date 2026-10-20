@@ -140,6 +140,35 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  mutation:
+    name: Mutation tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+        env:
+          POSTGRES_DB: mailbridge_test
+          POSTGRES_USER: mailbridge_test
+          POSTGRES_PASSWORD: ci-only-password
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U mailbridge_test -d mailbridge_test"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # Every deliberate bug in tests/mutation/mutations.ts must be caught by the tests.
+      - run: npm run test:mutation
+      - name: The working tree is unchanged afterwards
+        run: git diff --exit-code
+
   audit:
     name: Dependency audit
     runs-on: ubuntu-latest
@@ -259,7 +288,7 @@ jobs:
   publish:
     name: Publish image
     if: github.event_name == 'push'
-    needs: [verify, integration, e2e, audit, secrets, sast, workflows, contract, config-scan, image]
+    needs: [verify, integration, e2e, mutation, audit, secrets, sast, workflows, contract, config-scan, image]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

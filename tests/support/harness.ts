@@ -91,7 +91,20 @@ export async function startApp() {
         async reset() {
             upstream = undefined;
             logs.length = 0;
-            await pool.query('TRUNCATE users, sessions, login_attempts CASCADE');
+            // The audit log refuses TRUNCATE; tests own their database, so the guard is switched off for this one statement.
+            const client = await pool.connect();
+            try {
+                await client.query('BEGIN');
+                await client.query('ALTER TABLE audit_events DISABLE TRIGGER audit_events_guard_truncate');
+                await client.query('TRUNCATE users, sessions, login_attempts CASCADE');
+                await client.query('ALTER TABLE audit_events ENABLE TRIGGER audit_events_guard_truncate');
+                await client.query('COMMIT');
+            } catch (error) {
+                await client.query('ROLLBACK');
+                throw error;
+            } finally {
+                client.release();
+            }
         },
         async close() {
             globalThis.fetch = realFetch;

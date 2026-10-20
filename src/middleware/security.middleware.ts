@@ -1,6 +1,7 @@
 import type { RequestHandler } from 'express';
 import { createHmac, randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
+import { sendError } from '../http/errors.js';
 
 export const securityHeaders: RequestHandler = (req, res, next) => {
     const requestId = randomUUID();
@@ -75,7 +76,8 @@ export function throttle(
                 );
                 if (result.rows[0].attempts > limit) {
                     res.locals.throttled = true;
-                    res.set('Retry-After', '900').status(429).json({ message });
+                    res.set('Retry-After', '900');
+                    sendError(res, 429, 'rate_limited', message);
                     return;
                 }
             }

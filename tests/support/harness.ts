@@ -141,3 +141,11 @@ export async function register(app: TestApp, email: string, password = PASSWORD)
     const { user } = (await response.json()) as { user: { userId: string; email: string } };
     return { client, user };
 }
+
+// The shape of every error response: a stable code to match on and a message for people.
+export interface ApiError {
+    error: { code: string; message: string; details?: Array<{ path: string; message: string }> };
+}
+export async function errorOf(response: Response): Promise<ApiError['error']> {
+    return ((await response.json()) as ApiError).error;
+}

@@ -7,7 +7,8 @@ import type { MailFilters } from './emails.types.js';
 import { storedEml } from './eml.js';
 
 type AccountsRepository = ReturnType<typeof createAccountsRepository>;
-const demoSend = () => new MailError(400, 'This is a demo mailbox and cannot send mail. Connect a real account to send.');
+const demoSend = () =>
+    new MailError(400, 'This is a demo mailbox and cannot send mail. Connect a real account to send.', false, 'demo_mailbox');
 
 export function createEmailService(repository: EmailRepository, accounts: AccountsRepository, registry: MailRegistry) {
     async function accountOf(userId: string, accountId: string) {

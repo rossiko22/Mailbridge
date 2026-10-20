@@ -1,6 +1,7 @@
 import type { createUserService } from './users.service.js';
 import type { Request, Response, NextFunction } from 'express';
 import { MAX_AVATAR_BYTES } from './avatar.js';
+import { sendError } from '../../http/errors.js';
 
 type UserService = ReturnType<typeof createUserService>;
 
@@ -11,7 +12,7 @@ export function createUserController(userService: UserService) {
         try {
             const { displayName } = req.body ?? {};
             if (typeof displayName !== 'string' || displayName.trim().length > MAX_DISPLAY_NAME || /[\x00-\x1f\x7f]/.test(displayName)) {
-                res.status(400).json({ message: `Enter a name of up to ${MAX_DISPLAY_NAME} characters.` });
+                sendError(res, 400, 'validation_failed', `Enter a name of up to ${MAX_DISPLAY_NAME} characters.`);
                 return;
             }
             res.json({ user: await userService.updateDisplayName(req.currentUser!.userId, displayName) });
@@ -23,7 +24,7 @@ export function createUserController(userService: UserService) {
     async function uploadAvatar(req: Request, res: Response, next: NextFunction): Promise<void> {
         try {
             if (!(await userService.setAvatar(req.currentUser!.userId, req.body?.image))) {
-                res.status(400).json({ message: `Choose a PNG, JPEG or WebP image of up to ${MAX_AVATAR_BYTES / 1024} KB.` });
+                sendError(res, 400, 'validation_failed', `Choose a PNG, JPEG or WebP image of up to ${MAX_AVATAR_BYTES / 1024} KB.`);
                 return;
             }
             res.json({ saved: true });
@@ -36,7 +37,7 @@ export function createUserController(userService: UserService) {
         try {
             const avatar = await userService.getAvatar(req.currentUser!.userId);
             if (!avatar) {
-                res.status(404).json({ message: 'No profile photo.' });
+                sendError(res, 404, 'not_found', 'No profile photo.');
                 return;
             }
             // The URL carries the upload time, so the browser may keep it privately for a long while.

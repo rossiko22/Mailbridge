@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { createAccountsRepository } from '../../src/modules/accounts/accounts.repository.js';
 import { DEMO_EMAIL, DEMO_PASSWORD, seedDemoData } from '../../src/scripts/demo-data.js';
-import { createClient, register, startApp, type TestApp, type TestClient } from '../support/harness.js';
+import { type ApiError, createClient, register, startApp, type TestApp, type TestClient } from '../support/harness.js';
 
 let app: TestApp;
 before(async () => {
@@ -137,7 +137,7 @@ test('demo mailboxes are read-only: nothing is sent or synced', async () => {
     });
     for (const response of [reply, compose]) {
         assert.equal(response.status, 400);
-        assert.match(((await response.json()) as { message: string }).message, /demo mailbox/);
+        assert.match(((await response.json()) as ApiError).error.message, /demo mailbox/);
     }
     assert.equal((await app.pool.query('SELECT 1 FROM outgoing_messages')).rowCount, 0);
 });
@@ -325,7 +325,7 @@ test('a sign-in that Google rejects flags the account for reconnecting', async (
     app.setUpstream(url => (url.hostname === 'gmail.googleapis.com' ? json({}, 401) : undefined));
     const response = await client.post(`/accounts/${accountId}/sync`);
     assert.equal(response.status, 502);
-    assert.match(((await response.json()) as { message: string }).message, /Reconnect/);
+    assert.match(((await response.json()) as ApiError).error.message, /Reconnect/);
     const account = (await accountsOf(client)).accounts[0]!;
     assert.equal(account.needsReconnect, true);
     assert.match(account.lastError ?? '', /Reconnect/);
@@ -339,7 +339,9 @@ test('an unreachable provider is reported without leaking internals', async () =
     });
     const response = await client.post(`/accounts/${accountId}/sync`);
     assert.equal(response.status, 502);
-    assert.deepEqual(await response.json(), { message: 'The mail provider could not be reached. Try again shortly.' });
+    assert.deepEqual(await response.json(), {
+        error: { code: 'provider_error', message: 'The mail provider could not be reached. Try again shortly.' },
+    });
     assert.equal((await accountsOf(client)).accounts[0]!.needsReconnect, false);
 });
 
@@ -401,7 +403,7 @@ test('when the provider fails mid-send the outcome is reported as uncertain and 
     state.sendStatus = 503;
     const failed = await client.post('/emails/compose', message);
     assert.equal(failed.status, 502);
-    assert.match(((await failed.json()) as { message: string }).message, /uncertain/);
+    assert.match(((await failed.json()) as ApiError).error.message, /uncertain/);
     state.sendStatus = 200;
     assert.equal((await client.post('/emails/compose', message)).status, 409);
     assert.equal(sent.length, 0);

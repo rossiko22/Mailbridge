@@ -1,5 +1,5 @@
 {
-  "name": "ticket-mail",
+  "name": "mailbridge",
   "version": "1.0.0",
   "description": "A unified mail client: connect Outlook and Gmail mailboxes and read them together, with each mailbox listed separately on the side.",
   "main": "dist/server.js",

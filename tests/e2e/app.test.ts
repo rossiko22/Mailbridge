@@ -117,6 +117,13 @@ test('the dark theme is remembered across pages', async () => {
     await page.goto('/settings.html');
     assert.equal(await page.getAttribute('html', 'data-theme'), 'dark');
 });
+test('a theme saved under the old app name is kept and moved to the new name', async () => {
+    await page.goto('/');
+    await page.evaluate(() => localStorage.setItem('ticket-mail-theme', 'dark'));
+    await page.reload();
+    assert.equal(await page.getAttribute('html', 'data-theme'), 'dark');
+    assert.deepEqual(await page.evaluate(() => [localStorage.getItem('mailbridge-theme'), localStorage.getItem('ticket-mail-theme')]), ['dark', null]);
+});
 test('settings list the connected accounts and recent activity', async () => {
     await openInbox();
     await page.goto('/settings.html');

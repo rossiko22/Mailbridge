@@ -6,7 +6,7 @@ import type { AddressInfo } from 'node:net';
 import express from 'express';
 import { AppError } from '../src/http/errors.js';
 import { parse } from '../src/http/validate.js';
-import { createMailer } from '../src/integrations/mailer.js';
+import { createMailer, transportOptions } from '../src/integrations/mailer.js';
 import { errorMiddleware } from '../src/middleware/error.middleware.js';
 import { createAuthRouter } from '../src/modules/auth/auth.routes.js';
 import { loginBody, registerBody } from '../src/modules/auth/auth.schemas.js';
@@ -59,6 +59,7 @@ test('registration can be switched off for the whole server', async () => {
             auth: {} as never,
             requireAuth: async (_req, _res, next) => next(),
             allowRegistration: false,
+            cookie: { name: 'session', secure: false },
         }),
     );
     app.use(errorMiddleware);
@@ -132,4 +133,12 @@ test('without SMTP the reset link is logged in development and never in producti
     assert.match(lines[0]!, /^log:.*#token=abc$/);
     assert.match(lines[1]!, /^warn:/);
     assert.ok(!lines[1]!.includes('SECRET'));
+});
+
+test('SMTP must upgrade to TLS in production, so a network attacker cannot read reset links', () => {
+    const smtp = { host: 'smtp.example.com', port: 587, secure: false, user: 'u', password: 'p', from: 'a@example.com' };
+    assert.equal(transportOptions(smtp, 'production').requireTLS, true);
+    assert.equal(transportOptions({ ...smtp, port: 465, secure: true }, 'production').requireTLS, false, 'already TLS from the start');
+    assert.equal(transportOptions(smtp, 'development').requireTLS, false, 'Mailpit in development has no TLS');
+    assert.equal(transportOptions(smtp, 'production').tls.minVersion, 'TLSv1.2');
 });

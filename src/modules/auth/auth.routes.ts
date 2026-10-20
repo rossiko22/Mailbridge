@@ -2,6 +2,7 @@ import { type Request, Router } from 'express';
 import { AppError } from '../../http/errors.js';
 import { emptyBody, parse } from '../../http/validate.js';
 import type { createAuthMiddleware } from '../../middleware/auth.middleware.js';
+import type { SessionCookie } from '../../middleware/session.middleware.js';
 import { type Audit, noAudit } from '../audit/audit.js';
 import type { UserService } from '../users/users.service.js';
 import type { SafeUser } from '../users/users.types.js';
@@ -13,6 +14,7 @@ export interface AuthRouterOptions {
     auth: AuthService;
     requireAuth: ReturnType<typeof createAuthMiddleware>['requireAuth'];
     allowRegistration: boolean;
+    cookie: SessionCookie;
     audit?: Audit;
 }
 
@@ -29,7 +31,9 @@ async function startSession(req: Request, user: SafeUser): Promise<void> {
     await save(req);
 }
 
-export function createAuthRouter({ users, auth, requireAuth, allowRegistration, audit = noAudit }: AuthRouterOptions) {
+export function createAuthRouter({ users, auth, requireAuth, allowRegistration, cookie, audit = noAudit }: AuthRouterOptions) {
+    // The browser only drops a cookie when the name, path and (for __Host-) Secure match the ones it was set with.
+    const clearOptions = { path: '/', secure: cookie.secure, httpOnly: true, sameSite: 'lax' } as const;
     const router = Router();
 
     // Lets the sign-in page show or hide "Create account" without trying it.
@@ -84,7 +88,7 @@ export function createAuthRouter({ users, auth, requireAuth, allowRegistration, 
         }
         await audit.record(req, 'password-change', 'success');
         await destroy(req);
-        res.clearCookie('session', { path: '/' }).json({ changed: true });
+        res.clearCookie(cookie.name, clearOptions).json({ changed: true });
     });
 
     router.get('/me', requireAuth, (req, res) => {
@@ -102,7 +106,7 @@ export function createAuthRouter({ users, auth, requireAuth, allowRegistration, 
         const userId = req.session.userId;
         await destroy(req);
         if (userId) await audit.record(req, 'sign-out', 'success', { userId });
-        res.clearCookie('session', { path: '/' }).json({ loggedOut: true });
+        res.clearCookie(cookie.name, clearOptions).json({ loggedOut: true });
     });
 
     return router;

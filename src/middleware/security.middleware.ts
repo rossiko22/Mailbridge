@@ -31,6 +31,9 @@ export interface ThrottleLimits {
 
 // Counts attempts per client address, per account when the body carries an email, and per signed-in user.
 // Keys are hashed so the table never stores addresses. Each scope keeps its own counters.
+// Shared by every throttle in this process.
+let lastPrune = 0;
+
 export function throttle(
     pool: Pool,
     secret: string,
@@ -63,7 +66,11 @@ export function throttle(
                     return;
                 }
             }
-            await pool.query("DELETE FROM login_attempts WHERE window_start < NOW()-INTERVAL '1 day'");
+            // Old counters are removed at most once a minute, not on every request.
+            if (Date.now() - lastPrune > 60_000) {
+                lastPrune = Date.now();
+                await pool.query("DELETE FROM login_attempts WHERE window_start < NOW()-INTERVAL '1 day'");
+            }
             next();
         } catch (error) {
             next(error);

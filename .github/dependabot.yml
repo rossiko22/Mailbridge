@@ -1,9 +1,13 @@
 version: 2
+# Every ecosystem waits a week after a release before proposing it, so a hijacked or broken
+# release has time to be noticed and pulled before it reaches this repository.
 updates:
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     groups:
       development:
@@ -11,10 +15,13 @@ updates:
       production:
         dependency-type: production
         update-types: [minor, patch]
+  # Keeps the commit-SHA pins in the workflows current.
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       actions:
         patterns: ['*']
@@ -22,7 +29,18 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     # The Node.js major version is changed by hand, together with CI and package.json.
     ignore:
       - dependency-name: node
+        update-types: ['version-update:semver-major']
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: postgres
         update-types: ['version-update:semver-major']

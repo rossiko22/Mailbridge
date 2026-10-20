@@ -106,6 +106,8 @@ export function createEmailRouter(auth: ReturnType<typeof createAuthMiddleware>,
         if (req.query.images !== undefined && req.query.images !== 'true') throw new MailError(400, 'images must be true or omitted.');
         const body = await service.body(me(req), String(req.params.id));
         const images = req.query.images === 'true';
+        // The header value is a constant (only our own reader may frame the message), not user input.
+        // nosemgrep: javascript.express.security.x-frame-options-misconfiguration.x-frame-options-misconfiguration
         res.set({ 'Content-Security-Policy': emailCsp(images), 'X-Frame-Options': 'SAMEORIGIN' })
             .type('html')
             .send(renderEmail(body, images));

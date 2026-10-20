@@ -5,6 +5,9 @@ set -eu
 image="$1"
 port="${2:-3000}"
 name="mailbridge-smoke-$$"
+# Fresh random secrets for every run; nothing secret-looking is stored in the repository.
+session_secret="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
+encryption_key="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
 
 run() {
     docker run --rm --network host \
@@ -12,8 +15,8 @@ run() {
         -e POSTGRES_HOST="${POSTGRES_HOST:-127.0.0.1}" -e POSTGRES_PORT="${POSTGRES_PORT:-5432}" \
         -e POSTGRES_DB -e POSTGRES_USER -e POSTGRES_PASSWORD \
         -e PUBLIC_ORIGIN=https://mailbridge.example \
-        -e SESSION_SECRET=smoke-test-session-secret-0123456789abcdef \
-        -e TOKEN_ENCRYPTION_KEY=smoke-test-encryption-key-0123456789abcdef \
+        -e SESSION_SECRET="$session_secret" \
+        -e TOKEN_ENCRYPTION_KEY="$encryption_key" \
         "$@"
 }
 

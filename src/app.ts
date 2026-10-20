@@ -5,7 +5,7 @@ import type { Env } from './config/env.js';
 import { createMailRegistry } from './integrations/mail/registry.js';
 import { createMailer } from './integrations/mailer.js';
 import { createAuthMiddleware } from './middleware/auth.middleware.js';
-import { errorMiddleware } from './middleware/error.middleware.js';
+import { errorMiddleware, notFoundMiddleware } from './middleware/error.middleware.js';
 import { requireSameSiteJson } from './middleware/json.middleware.js';
 import { securityHeaders, throttle } from './middleware/security.middleware.js';
 import { createSessionMiddleware } from './middleware/session.middleware.js';
@@ -104,8 +104,6 @@ export function createApp({ pool, env }: AppDependencies) {
         res.json({ status: 'ok' });
     });
 
-    app.use(errorMiddleware);
-
     app.use(
         express.static(publicDirectory, {
             setHeaders(res, path) {
@@ -113,6 +111,8 @@ export function createApp({ pool, env }: AppDependencies) {
             },
         }),
     );
+    app.use(notFoundMiddleware);
+    app.use(errorMiddleware);
 
     return app;
 }

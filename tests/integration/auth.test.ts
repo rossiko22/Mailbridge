@@ -1,7 +1,7 @@
 import { after, before, beforeEach, mock, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
-import { createClient, PASSWORD, register, startApp, type TestApp } from '../support/harness.js';
+import { createClient, errorOf, PASSWORD, register, startApp, type TestApp } from '../support/harness.js';
 
 let app: TestApp;
 before(async () => {
@@ -47,7 +47,9 @@ test('sign-in gives the same answer for a wrong password and an unknown address'
     const unknown = await login('nobody@example.com', 'wrong-password-123');
     assert.equal(wrong.status, 401);
     assert.equal(unknown.status, 401);
-    assert.deepEqual(await wrong.json(), await unknown.json());
+    const [wrongError, unknownError] = [await errorOf(wrong), await errorOf(unknown)];
+    assert.deepEqual(wrongError, unknownError);
+    assert.equal(wrongError.code, 'invalid_credentials');
     assert.equal((await login('PERSON@example.com', PASSWORD)).status, 200);
     assert.equal((await login('person@example.com', '')).status, 400);
 });

@@ -1,5 +1,6 @@
 import { type SafeUser, toSafeUser } from './users.types.js';
 import type { UserRepository } from './users.repository.js';
+import { AppError } from '../../http/errors.js';
 import { hashPassword, verifyHashPassword } from '../../security/password.js';
 import type { UUID } from 'node:crypto';
 import { parseAvatar } from './avatar.js';
@@ -14,7 +15,7 @@ export function createUserService(userRepository: UserRepository) {
         const user = await userRepository.findByEmail(normalizedEmail);
 
         if (user) {
-            throw new Error('User already exists');
+            throw new AppError(409, 'email_taken', 'An account with this email already exists.');
         }
 
         const hashedPassword = await hashPassword(password);

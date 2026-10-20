@@ -19,7 +19,7 @@
     } catch {
       /* Empty or non-JSON body. */
     }
-    if (!response.ok) throw new Error(data.message || 'The request failed. Please try again.');
+    if (!response.ok) throw new Error(data.error?.message || 'The request failed. Please try again.');
     return data;
   }
   const json = (method, body) => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body ?? {}) });
@@ -28,7 +28,7 @@
     if (!response.ok) {
       if (response.status === 401) location.assign('index.html');
       const data = await response.json().catch(() => ({}));
-      throw new Error(data.message || 'Download failed.');
+      throw new Error(data.error?.message || 'Download failed.');
     }
     const url = URL.createObjectURL(await response.blob());
     const link = document.createElement('a');

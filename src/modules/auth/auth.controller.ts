@@ -5,6 +5,7 @@ import type { AuthService } from './auth.service.js';
 import { EMAIL_MAX, PASSWORD_MAX, passwordRule, validEmail, validNewPassword } from './auth.validation.js';
 import { MAX_DISPLAY_NAME } from '../users/users.controller.js';
 import { noAudit, type Audit } from '../audit/audit.js';
+import { sendError } from '../../http/errors.js';
 
 type UserService = ReturnType<typeof createUserService>;
 
@@ -26,7 +27,7 @@ export function createAuthController(userService: UserService, authService: Auth
             const body: unknown = req.body;
 
             if (typeof body !== 'object' || body === null || !('email' in body) || !('password' in body)) {
-                res.status(400).json({ message: 'Email or password are required' });
+                sendError(res, 400, 'validation_failed', 'Email or password are required');
                 return;
             }
 
@@ -40,9 +41,7 @@ export function createAuthController(userService: UserService, authService: Auth
                 password.length > PASSWORD_MAX ||
                 password === ''
             ) {
-                res.status(400).json({
-                    message: 'Invalid email or password.',
-                });
+                sendError(res, 400, 'validation_failed', 'Invalid email or password.');
                 return;
             }
 
@@ -50,9 +49,7 @@ export function createAuthController(userService: UserService, authService: Auth
 
             if (!user) {
                 await audit.record(req, 'sign-in', 'failure', { email });
-                res.status(401).json({
-                    message: 'Invalid email or password.',
-                });
+                sendError(res, 401, 'invalid_credentials', 'Invalid email or password.');
                 return;
             }
 
@@ -67,20 +64,20 @@ export function createAuthController(userService: UserService, authService: Auth
     async function register(req: Request, res: Response, next: NextFunction): Promise<void> {
         try {
             if (!allowRegistration) {
-                res.status(403).json({ message: 'Registration is turned off on this server.' });
+                sendError(res, 403, 'registration_disabled', 'Registration is turned off on this server.');
                 return;
             }
             const { email, password, displayName = '' } = req.body ?? {};
             if (!validEmail(email)) {
-                res.status(400).json({ message: 'Enter a valid email address.' });
+                sendError(res, 400, 'validation_failed', 'Enter a valid email address.');
                 return;
             }
             if (!validNewPassword(password)) {
-                res.status(400).json({ message: passwordRule });
+                sendError(res, 400, 'validation_failed', passwordRule);
                 return;
             }
             if (typeof displayName !== 'string' || displayName.trim().length > MAX_DISPLAY_NAME || /[\x00-\x1f\x7f]/.test(displayName)) {
-                res.status(400).json({ message: `Enter a name of up to ${MAX_DISPLAY_NAME} characters.` });
+                sendError(res, 400, 'validation_failed', `Enter a name of up to ${MAX_DISPLAY_NAME} characters.`);
                 return;
             }
             const user = await userService.create(email, password, displayName);
@@ -96,7 +93,7 @@ export function createAuthController(userService: UserService, authService: Auth
         try {
             const { email } = req.body ?? {};
             if (!validEmail(email)) {
-                res.status(400).json({ message: 'Enter a valid email address.' });
+                sendError(res, 400, 'validation_failed', 'Enter a valid email address.');
                 return;
             }
             await authService.requestPasswordReset(email);
@@ -111,17 +108,17 @@ export function createAuthController(userService: UserService, authService: Auth
         try {
             const { token, password } = req.body ?? {};
             if (typeof token !== 'string' || !/^[\w-]{20,100}$/.test(token)) {
-                res.status(400).json({ message: 'This reset link is invalid or has expired. Request a new one.' });
+                sendError(res, 400, 'invalid_reset_token', 'This reset link is invalid or has expired. Request a new one.');
                 return;
             }
             if (!validNewPassword(password)) {
-                res.status(400).json({ message: passwordRule });
+                sendError(res, 400, 'validation_failed', passwordRule);
                 return;
             }
             const userId = await authService.resetPassword(token, password);
             if (!userId) {
                 await audit.record(req, 'password-reset', 'failure');
-                res.status(400).json({ message: 'This reset link is invalid or has expired. Request a new one.' });
+                sendError(res, 400, 'invalid_reset_token', 'This reset link is invalid or has expired. Request a new one.');
                 return;
             }
             await audit.record(req, 'password-reset', 'success', { userId });
@@ -135,12 +132,12 @@ export function createAuthController(userService: UserService, authService: Auth
         try {
             const { currentPassword, newPassword } = req.body ?? {};
             if (typeof currentPassword !== 'string' || currentPassword.length > PASSWORD_MAX || !validNewPassword(newPassword)) {
-                res.status(400).json({ message: `Provide your current password. ${passwordRule}` });
+                sendError(res, 400, 'validation_failed', `Provide your current password. ${passwordRule}`);
                 return;
             }
             if (!(await userService.changePassword(req.currentUser!.userId, currentPassword, newPassword))) {
                 await audit.record(req, 'password-change', 'failure');
-                res.status(400).json({ message: 'Current password is incorrect.' });
+                sendError(res, 400, 'wrong_password', 'Current password is incorrect.');
                 return;
             }
             await audit.record(req, 'password-change', 'success');

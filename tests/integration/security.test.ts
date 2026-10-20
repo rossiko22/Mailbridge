@@ -2,7 +2,7 @@ import { after, before, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { MAX_SESSION_AGE } from '../../src/middleware/auth.middleware.js';
-import { createClient, PASSWORD, register, startApp, type TestApp } from '../support/harness.js';
+import { createClient, errorOf, PASSWORD, register, startApp, type TestApp } from '../support/harness.js';
 
 let app: TestApp;
 before(async () => {
@@ -51,12 +51,20 @@ test('malformed and oversized bodies are rejected without a server error', async
     assert.equal((await client.request('POST', '/auth/login', '{"email":')).status, 400);
     assert.equal((await client.post('/auth/login', { email: 'a@example.com', password: 'x'.repeat(70_000) })).status, 413);
 });
+test('unknown paths answer with a JSON not_found error instead of an HTML page', async () => {
+    const client = createClient(app.url);
+    for (const response of [await client.get('/no-such-page'), await client.post('/nothing-here', {})]) {
+        assert.equal(response.status, 404);
+        assert.match(response.headers.get('content-type') ?? '', /application\/json/);
+        assert.deepEqual(await errorOf(response), { code: 'not_found', message: 'Not found.' });
+    }
+});
 test('every data route requires a signed-in session', async () => {
     const client = createClient(app.url);
     for (const path of ['/auth/me', '/emails', '/accounts', '/users/me/avatar', '/emails/00000000-0000-4000-8000-000000000000']) {
         const response = await client.get(path);
         assert.equal(response.status, 401, path);
-        assert.deepEqual(await response.json(), { message: 'Authentication required' });
+        assert.deepEqual(await response.json(), { error: { code: 'unauthenticated', message: 'Authentication required' } });
     }
     assert.equal((await client.patch('/users/me', { displayName: 'x' })).status, 401);
     assert.equal((await client.post('/emails/compose', {})).status, 401);

@@ -61,12 +61,25 @@ function handle(error: unknown) {
     return { ...result, logged };
 }
 test('errors written for people pass through; everything else is hidden and logged without detail', () => {
-    assert.deepEqual(handle(new MailError(404, 'Email not found.')), { status: 404, body: { message: 'Email not found.' }, logged: [] });
-    assert.equal(handle({ type: 'entity.too.large' }).status, 413);
-    assert.equal(handle({ type: 'entity.parse.failed' }).status, 400);
-    assert.equal(handle(Object.assign(new Error('duplicate key'), { code: '23505', constraint: 'users_email_unique' })).status, 409);
+    assert.deepEqual(handle(new MailError(404, 'Email not found.')), {
+        status: 404,
+        body: { error: { code: 'not_found', message: 'Email not found.' } },
+        logged: [],
+    });
+    assert.deepEqual(handle(new MailError(502, 'Sign in again.', true)).body, {
+        error: { code: 'reconnect_required', message: 'Sign in again.' },
+    });
+    assert.deepEqual(handle({ type: 'entity.too.large' }).body, {
+        error: { code: 'body_too_large', message: 'Request body is too large.' },
+    });
+    assert.deepEqual(handle({ type: 'entity.parse.failed' }).body, { error: { code: 'invalid_json', message: 'Invalid JSON body.' } });
+    const duplicate = handle(Object.assign(new Error('duplicate key'), { code: '23505', constraint: 'users_email_unique' }));
+    assert.deepEqual([duplicate.status, (duplicate.body as { error: { code: string } }).error.code], [409, 'email_taken']);
     const hidden = handle(new Error('connect ECONNREFUSED 10.0.0.7:5432 password=hunter2'));
-    assert.deepEqual([hidden.status, hidden.body], [500, { message: 'An unexpected server error occurred' }]);
+    assert.deepEqual(
+        [hidden.status, hidden.body],
+        [500, { error: { code: 'internal_error', message: 'An unexpected server error occurred.' } }],
+    );
     assert.equal(hidden.logged.length, 1);
     assert.ok(!hidden.logged[0]!.includes('hunter2'), 'error messages are not written to the log');
 });

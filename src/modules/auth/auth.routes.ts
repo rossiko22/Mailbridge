@@ -21,11 +21,8 @@ export function createAuthRouter(authController: AuthController, auth: ReturnTyp
     router.get('/activity', auth.requireAuth, async (req, res) => {
         res.set('Cache-Control', 'no-store').json({ events: await audit.recent(req.currentUser!.userId) });
     });
+    // Cross-site sign-out attempts are already refused by requireSameSiteJson, like every other POST.
     router.post('/logout', (req, res, next) => {
-        if (!req.is('application/json') || req.get('Sec-Fetch-Site') === 'cross-site') {
-            res.status(415).json({ message: 'Use a same-site application/json request.' });
-            return;
-        }
         const userId = req.session.userId;
         req.session.destroy(async error => {
             if (error) {

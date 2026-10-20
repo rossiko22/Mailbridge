@@ -1,8 +1,6 @@
-import type * as repository from '../modules/users/users.repository.js';
+import type { UserRepository } from '../modules/users/users.repository.js';
 import type { NextFunction, Request, Response } from 'express';
 import { toSafeUser } from '../modules/users/users.types.js';
-
-type UserRepository = typeof repository;
 
 // Activity keeps a session alive for 8 hours at a time, but never beyond this.
 export const MAX_SESSION_AGE = 7 * 24 * 60 * 60 * 1000;

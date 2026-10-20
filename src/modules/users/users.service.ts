@@ -1,10 +1,8 @@
 import { type SafeUser, toSafeUser } from './users.types.js';
-import type * as repository from './users.repository.js';
+import type { UserRepository } from './users.repository.js';
 import { hashPassword, verifyHashPassword } from '../../security/password.js';
 import type { UUID } from 'node:crypto';
 import { parseAvatar } from './avatar.js';
-
-type UserRepository = typeof repository;
 
 // Verified when the address has no account, so an unknown address takes as long to refuse as a wrong password
 // and the response time does not reveal who is registered.

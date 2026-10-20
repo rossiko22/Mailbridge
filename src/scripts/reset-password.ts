@@ -1,6 +1,10 @@
-import { pool } from '../config/database.js';
+import { createPool } from '../config/database.js';
+import { env } from '../config/env.js';
 import { hashPassword } from '../security/password.js';
-import { findByEmail, updatePassword } from '../modules/users/users.repository.js';
+import { createUserRepository } from '../modules/users/users.repository.js';
+
+const pool = createPool(env);
+const { findByEmail, updatePassword } = createUserRepository(pool);
 
 try {
     const email = process.env.RESET_USER_EMAIL?.trim();

@@ -1,40 +1,68 @@
-import { Pool } from 'pg';
-import { env } from './env.js';
+import { Pool, type PoolClient } from 'pg';
 
-export const pool = new Pool({
-    host: env.POSTGRES_HOST,
-    port: env.POSTGRES_PORT,
-    database: env.POSTGRES_DB,
-    user: env.POSTGRES_USER,
-    password: env.POSTGRES_PASSWORD,
+export interface DatabaseConfig {
+    POSTGRES_HOST: string;
+    POSTGRES_PORT: number;
+    POSTGRES_DB: string;
+    POSTGRES_USER: string;
+    POSTGRES_PASSWORD: string;
+}
 
-    max: 10,
-    idleTimeoutMillis: 30_000,
-    connectionTimeoutMillis: 5_000,
-});
+// Only entry points (server, scripts, tests) create a pool; everything else receives it as a parameter.
+export function createPool(config: DatabaseConfig): Pool {
+    const pool = new Pool({
+        host: config.POSTGRES_HOST,
+        port: config.POSTGRES_PORT,
+        database: config.POSTGRES_DB,
+        user: config.POSTGRES_USER,
+        password: config.POSTGRES_PASSWORD,
 
-// Handles unexpected errors from connections sitting idle in the pool.
-pool.on('error', error => {
-    console.error('Unexpected PostgreSQL pool error:', error.message);
-});
+        max: 10,
+        idleTimeoutMillis: 30_000,
+        connectionTimeoutMillis: 5_000,
+    });
+    // Handles unexpected errors from connections sitting idle in the pool.
+    pool.on('error', error => {
+        console.error('Unexpected PostgreSQL pool error:', error.message);
+    });
+    return pool;
+}
+
+// Runs `work` inside BEGIN/COMMIT on one connection. Any error rolls back and is rethrown.
+export async function withTransaction<T>(pool: Pool, work: (client: PoolClient) => Promise<T>): Promise<T> {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const result = await work(client);
+        await client.query('COMMIT');
+        return result;
+    } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    } finally {
+        client.release();
+    }
+}
+
+export const REQUIRED_TABLES = [
+    'users',
+    'sessions',
+    'login_attempts',
+    'password_resets',
+    'user_avatars',
+    'mail_accounts',
+    'emails',
+    'email_bodies',
+    'outgoing_messages',
+    'audit_events',
+] as const;
 
 // Call and await this during startup, before app.listen().
-export async function checkDatabaseConnection(): Promise<void> {
+export async function checkDatabaseConnection(pool: Pool): Promise<void> {
     await pool.query('SELECT 1');
-    for (const table of [
-        'users',
-        'sessions',
-        'login_attempts',
-        'password_resets',
-        'user_avatars',
-        'mail_accounts',
-        'emails',
-        'email_bodies',
-        'outgoing_messages',
-        'audit_events',
-    ]) {
-        const result = await pool.query('SELECT to_regclass($1) AS relation', [table]);
-        if (!result.rows[0].relation) throw new Error(`Missing database table ${table}. Run migrations before starting the server.`);
-    }
-    console.log('PostgreSQL connection and schema checks successful');
+    const result = await pool.query<{ name: string }>('SELECT t AS name FROM unnest($1::text[]) AS t WHERE to_regclass(t) IS NULL', [
+        REQUIRED_TABLES,
+    ]);
+    const missing = result.rows[0]?.name;
+    if (missing) throw new Error(`Missing database table ${missing}. Run migrations before starting the server.`);
 }

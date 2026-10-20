@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
 import type { CredentialStore, ProviderId } from '../../integrations/mail/types.js';
+import { withTransaction } from '../../config/database.js';
 import { tokenVault } from '../../security/token-vault.js';
 
 // Colors are CSS classes in the design system; accounts get the first unused one.
@@ -45,9 +46,7 @@ export function createAccountsRepository(pool: Pool, secret: string) {
 
     // Connecting an account that already exists renews its sign-in instead of adding a duplicate.
     async function upsertConnected(userId: string, provider: ProviderId, email: string, displayName: string, credentials: string) {
-        const client = await pool.connect();
-        try {
-            await client.query('BEGIN');
+        return withTransaction(pool, async client => {
             await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`account:${userId}:${provider}:${email.toLowerCase()}`]);
             const existing = await client.query<{ account_id: string }>(
                 'SELECT account_id FROM mail_accounts WHERE user_id=$1 AND provider=$2 AND lower(email)=lower($3)',
@@ -58,7 +57,7 @@ export function createAccountsRepository(pool: Pool, secret: string) {
             if (existing.rows[0]) {
                 await client.query(
                     `UPDATE mail_accounts SET credentials=$2, display_name=$3, needs_reconnect=FALSE, last_error=NULL
-                    WHERE account_id=$1`,
+                WHERE account_id=$1`,
                     [id, encrypted, displayName],
                 );
             } else {
@@ -67,18 +66,12 @@ export function createAccountsRepository(pool: Pool, secret: string) {
                 const color = accountColors.find(item => !taken.has(item)) ?? accountColors[used.rows.length % accountColors.length]!;
                 await client.query(
                     `INSERT INTO mail_accounts (account_id, user_id, provider, email, display_name, color, credentials)
-                    VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+                VALUES ($1,$2,$3,$4,$5,$6,$7)`,
                     [id, userId, provider, email, displayName, color, encrypted],
                 );
             }
-            await client.query('COMMIT');
             return { id, created: !existing.rows[0] };
-        } catch (error) {
-            await client.query('ROLLBACK');
-            throw error;
-        } finally {
-            client.release();
-        }
+        });
     }
 
     async function remove(userId: string, accountId: string): Promise<boolean> {

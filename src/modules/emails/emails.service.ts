@@ -1,4 +1,3 @@
-import type { Pool } from 'pg';
 import { MailError } from '../../integrations/mail/errors.js';
 import type { MailRegistry } from '../../integrations/mail/registry.js';
 import type { NewMessage } from '../../integrations/mail/types.js';
@@ -10,7 +9,7 @@ import { storedEml } from './eml.js';
 type AccountsRepository = ReturnType<typeof createAccountsRepository>;
 const demoSend = () => new MailError(400, 'This is a demo mailbox and cannot send mail. Connect a real account to send.');
 
-export function createEmailService(pool: Pool, repository: EmailRepository, accounts: AccountsRepository, registry: MailRegistry) {
+export function createEmailService(repository: EmailRepository, accounts: AccountsRepository, registry: MailRegistry) {
     async function accountOf(userId: string, accountId: string) {
         const account = await accounts.get(userId, accountId);
         if (!account) throw new MailError(404, 'Account not found.');
@@ -28,33 +27,13 @@ export function createEmailService(pool: Pool, repository: EmailRepository, acco
 
     // One page per call, under a lock so overlapping syncs of the same account cannot interleave.
     async function syncPage(accountId: string, client: ReturnType<MailRegistry['client']>) {
-        const db = await pool.connect();
-        let open = false;
-        try {
-            await db.query('BEGIN');
-            open = true;
-            const lock = await db.query('SELECT pg_try_advisory_xact_lock(hashtext($1)) AS locked', [`mail-sync:${accountId}`]);
-            if (!lock.rows[0].locked) throw new MailError(409, 'This account is already syncing.');
-            const state = await db.query('SELECT sync_cursor FROM mail_accounts WHERE account_id = $1', [accountId]);
-            const page = await client.sync(state.rows[0]?.sync_cursor ?? null);
-            for (const message of page.messages) await repository.save(db, accountId, message);
-            await db.query('UPDATE mail_accounts SET sync_cursor = $2, synced_at = NOW(), last_error = NULL WHERE account_id = $1', [
-                accountId,
-                page.cursor,
-            ]);
-            await db.query('COMMIT');
-            open = false;
-            return {
-                processed: page.messages.filter(message => !message.removed).length,
-                removed: page.messages.filter(message => message.removed).length,
-                hasMore: page.hasMore,
-            };
-        } catch (error) {
-            if (open) await db.query('ROLLBACK');
-            throw error;
-        } finally {
-            db.release();
-        }
+        const page = await repository.syncLocked(accountId, cursor => client.sync(cursor));
+        if (!page) throw new MailError(409, 'This account is already syncing.');
+        return {
+            processed: page.messages.filter(message => !message.removed).length,
+            removed: page.messages.filter(message => message.removed).length,
+            hasMore: page.hasMore,
+        };
     }
 
     async function sync(userId: string, accountId: string) {
@@ -67,7 +46,7 @@ export function createEmailService(pool: Pool, repository: EmailRepository, acco
             } catch (error) {
                 // An expired checkpoint is rebuilt immediately instead of asking the person to try again.
                 if (!(error instanceof MailError) || error.status !== 410) throw error;
-                await pool.query('UPDATE mail_accounts SET sync_cursor = NULL WHERE account_id = $1', [account.id]);
+                await repository.resetSyncCursor(account.id);
                 return await syncPage(account.id, client);
             }
         } catch (error) {
@@ -89,16 +68,12 @@ export function createEmailService(pool: Pool, repository: EmailRepository, acco
 
     async function body(userId: string, id: string) {
         const email = await emailOf(userId, id);
-        const cached = await pool.query('SELECT content_type AS "contentType", content FROM email_bodies WHERE email_id = $1', [id]);
-        if (cached.rows[0]) return { ...cached.rows[0], source: 'saved', warning: '' };
+        const cached = await repository.savedBody(id);
+        if (cached) return { ...cached, source: 'saved', warning: '' };
         if (email.isDemo) return { contentType: 'text', content: email.body, source: 'saved', warning: '' };
         try {
             const result = await clientFor(email).body(email.providerId);
-            await pool.query(
-                `INSERT INTO email_bodies (email_id, content_type, content) VALUES ($1,$2,$3)
-                ON CONFLICT (email_id) DO UPDATE SET content_type = EXCLUDED.content_type, content = EXCLUDED.content, fetched_at = NOW()`,
-                [id, result.contentType, result.content],
-            );
+            await repository.saveBody(id, result);
             return { ...result, source: 'provider', warning: '' };
         } catch (error) {
             if (!(error instanceof MailError)) throw error;

@@ -1,7 +1,9 @@
-import { pool } from '../config/database.js';
+import { createPool } from '../config/database.js';
+import { env } from '../config/env.js';
 import { DEMO_EMAIL, DEMO_PASSWORD, seedDemoData } from './demo-data.js';
 
 async function main(): Promise<void> {
+    const pool = createPool(env);
     try {
         if (process.env.NODE_ENV !== 'development') {
             throw new Error('Development seeding requires NODE_ENV=development.');

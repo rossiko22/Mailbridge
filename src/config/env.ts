@@ -85,3 +85,4 @@ export const env = {
           }
         : undefined,
 } as const;
+export type Env = typeof env;

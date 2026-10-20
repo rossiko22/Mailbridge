@@ -6,7 +6,7 @@ import { createAuthController } from '../src/modules/auth/auth.controller.js';
 import { createAuthService, RESET_MINUTES } from '../src/modules/auth/auth.service.js';
 import { validEmail, validNewPassword } from '../src/modules/auth/auth.validation.js';
 import { createMailer } from '../src/integrations/mailer.js';
-import type * as repository from '../src/modules/users/users.repository.js';
+import type { UserRepository } from '../src/modules/users/users.repository.js';
 
 test('email and password rules', () => {
     for (const value of ['a@b.co', ' padded@example.com ']) assert.equal(validEmail(value), true, value);
@@ -52,7 +52,7 @@ function resetSetup(user: { userId: string; email: string; isActive: boolean } |
         createResetToken: async (userId: string, hash: string, expiresAt: Date) => {
             stored.push({ userId, hash, expiresAt });
         },
-    } as unknown as typeof repository;
+    } as unknown as UserRepository;
     const service = createAuthService(
         users,
         {

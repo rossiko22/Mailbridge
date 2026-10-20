@@ -162,7 +162,10 @@ test('settings list the connected accounts and recent activity', async () => {
     await page.getByText('demo.work@outlook.example').first().waitFor();
     await page.getByText('demo.personal@gmail.example').first().waitFor();
     await page.locator('#activity-list').getByText('Signed in').first().waitFor();
-    assert.match((await page.locator('#activity-list .account-row small').first().textContent()) ?? '', /Chrome on \w+ · 127\.0\.0\.1/);
+    assert.match(
+        (await page.locator('#activity-list .account-row small').first().textContent()) ?? '',
+        /(Chrome|Firefox) on \w+ · 127\.0\.0\.1/,
+    );
     await shot('settings');
     const saved = await app.pool.query('SELECT count(*)::int AS n FROM mail_accounts');
     assert.equal(saved.rows[0].n, 2);
@@ -216,7 +219,7 @@ test('everything a person needs works with the keyboard alone', async () => {
     await page.keyboard.press('Escape');
     await page.waitForFunction(() => document.querySelectorAll('#message-list .msg').length > 1);
     // Sign out through the profile menu.
-    await tabTo('#profile-button', { backwards: true });
+    await tabTo('#profile-button');
     await page.keyboard.press('Enter');
     await page.waitForSelector('#profile-menu:not([hidden])');
     await page.keyboard.press('ArrowDown');

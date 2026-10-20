@@ -71,3 +71,5 @@ export function createUserService(userRepository: UserRepository) {
         removeAvatar: userRepository.removeAvatar,
     };
 }
+
+export type UserService = ReturnType<typeof createUserService>;

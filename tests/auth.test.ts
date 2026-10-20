@@ -1,47 +1,82 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import type { Request, Response } from 'express';
-import { createAuthController } from '../src/modules/auth/auth.controller.js';
-import { createAuthService, RESET_MINUTES } from '../src/modules/auth/auth.service.js';
-import { validEmail, validNewPassword } from '../src/modules/auth/auth.validation.js';
+import { once } from 'node:events';
+import type { AddressInfo } from 'node:net';
+import express from 'express';
+import { AppError } from '../src/http/errors.js';
+import { parse } from '../src/http/validate.js';
 import { createMailer } from '../src/integrations/mailer.js';
+import { errorMiddleware } from '../src/middleware/error.middleware.js';
+import { createAuthRouter } from '../src/modules/auth/auth.routes.js';
+import { loginBody, registerBody } from '../src/modules/auth/auth.schemas.js';
+import { createAuthService, RESET_MINUTES } from '../src/modules/auth/auth.service.js';
 import type { UserRepository } from '../src/modules/users/users.repository.js';
 
+const fails = (schema: Parameters<typeof parse>[0], input: unknown) =>
+    assert.throws(
+        () => parse(schema, input),
+        (error: unknown) => error instanceof AppError && error.code === 'validation_failed',
+    );
+
 test('email and password rules', () => {
-    for (const value of ['a@b.co', ' padded@example.com ']) assert.equal(validEmail(value), true, value);
-    for (const value of ['', 'no-at-sign', 'a@b', 'two words@example.com', `${'x'.repeat(250)}@example.com`, 42, null])
-        assert.equal(validEmail(value), false, String(value));
-    assert.equal(validNewPassword('x'.repeat(11)), false);
-    assert.equal(validNewPassword('x'.repeat(12)), true);
-    assert.equal(validNewPassword('x'.repeat(1025)), false);
-    assert.equal(validNewPassword(123456789012), false);
+    const valid = { password: 'x'.repeat(12) };
+    for (const email of ['a@b.co', ' padded@example.com ']) assert.equal(parse(registerBody, { ...valid, email }).email, email.trim());
+    for (const email of ['', 'no-at-sign', 'a@b', 'two words@example.com', `${'x'.repeat(250)}@example.com`, 42, null])
+        fails(registerBody, { ...valid, email });
+    for (const password of ['x'.repeat(11), 'x'.repeat(1025), 123456789012]) fails(registerBody, { email: 'a@b.co', password });
+    assert.equal(parse(registerBody, { email: 'a@b.co', ...valid }).displayName, '');
+});
+test('request bodies are strict: unknown fields are refused, so nothing extra can be smuggled in', () => {
+    fails(loginBody, { email: 'a@b.co', password: 'x', isAdmin: true });
+    fails(registerBody, { email: 'a@b.co', password: 'x'.repeat(12), userId: '00000000-0000-4000-8000-000000000000' });
+});
+test('a validation error names the failing fields but never echoes the submitted value', () => {
+    try {
+        parse(registerBody, { email: 'secret-value', password: 'short' });
+        assert.fail('expected an error');
+    } catch (error) {
+        assert.ok(error instanceof AppError);
+        assert.deepEqual(
+            error.details?.map(detail => detail.path),
+            ['email', 'password'],
+        );
+        assert.ok(!JSON.stringify(error.details).includes('secret-value'));
+    }
 });
 
-function fakeResponse() {
-    const result = { status: 200, body: undefined as unknown };
-    const response = {
-        status(code: number) {
-            result.status = code;
-            return response;
-        },
-        json(body: unknown) {
-            result.body = body;
-            return response;
-        },
-    };
-    return { result, response: response as unknown as Response };
-}
 test('registration can be switched off for the whole server', async () => {
-    const controller = createAuthController({} as never, {} as never, false);
-    const { result, response } = fakeResponse();
-    await controller.register({ body: { email: 'a@example.com', password: 'x'.repeat(12) } } as Request, response, () =>
-        assert.fail('no error expected'),
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => {
+        req.session = {} as typeof req.session;
+        next();
+    });
+    app.use(
+        '/auth',
+        createAuthRouter({
+            users: {} as never,
+            auth: {} as never,
+            requireAuth: async (_req, _res, next) => next(),
+            allowRegistration: false,
+        }),
     );
-    assert.equal(result.status, 403);
-    const config = fakeResponse();
-    controller.config({} as Request, config.response);
-    assert.deepEqual(config.result.body, { registration: false });
+    app.use(errorMiddleware);
+    const server = app.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/auth`;
+    try {
+        const refused = await fetch(`${base}/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: 'a@example.com', password: 'x'.repeat(12) }),
+        });
+        assert.equal(refused.status, 403);
+        assert.equal(((await refused.json()) as { error: { code: string } }).error.code, 'registration_disabled');
+        assert.deepEqual(await (await fetch(`${base}/config`)).json(), { registration: false });
+    } finally {
+        server.close();
+    }
 });
 
 function resetSetup(user: { userId: string; email: string; isActive: boolean } | null) {

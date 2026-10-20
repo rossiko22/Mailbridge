@@ -12,13 +12,11 @@ import { createSessionMiddleware } from './middleware/session.middleware.js';
 import { createAccountsRepository } from './modules/accounts/accounts.repository.js';
 import { createAccountsRouter } from './modules/accounts/accounts.routes.js';
 import { createAudit } from './modules/audit/audit.js';
-import { createAuthController } from './modules/auth/auth.controller.js';
 import { createAuthRouter } from './modules/auth/auth.routes.js';
 import { createAuthService } from './modules/auth/auth.service.js';
 import { createEmailRepository } from './modules/emails/emails.repository.js';
 import { createEmailRouter } from './modules/emails/emails.routes.js';
 import { createEmailService } from './modules/emails/emails.service.js';
-import { createUserController } from './modules/users/users.controller.js';
 import { createUserRepository } from './modules/users/users.repository.js';
 import { createUserRouter } from './modules/users/users.routes.js';
 import { createUserService } from './modules/users/users.service.js';
@@ -61,9 +59,6 @@ export function createApp({ pool, env }: AppDependencies) {
     const authMiddleware = createAuthMiddleware(userRepository);
     const authService = createAuthService(userRepository, createMailer(env.SMTP, env.NODE_ENV), env.PUBLIC_ORIGIN);
 
-    const authController = createAuthController(userService, authService, env.ALLOW_REGISTRATION, audit);
-    const userController = createUserController(userService);
-
     app.post(
         '/auth/login',
         throttle(
@@ -85,9 +80,18 @@ export function createApp({ pool, env }: AppDependencies) {
     );
     app.get('/accounts/connect/:provider', throttle(pool, env.SESSION_SECRET, 'connect', { perUser: 30 }));
     app.put('/users/me/avatar', throttle(pool, env.SESSION_SECRET, 'avatar', { perUser: 30 }));
-    app.use('/auth', createAuthRouter(authController, authMiddleware, audit));
+    app.use(
+        '/auth',
+        createAuthRouter({
+            users: userService,
+            auth: authService,
+            requireAuth: authMiddleware.requireAuth,
+            allowRegistration: env.ALLOW_REGISTRATION,
+            audit,
+        }),
+    );
 
-    app.use('/users', createUserRouter(userController, authMiddleware));
+    app.use('/users', createUserRouter({ users: userService, requireAuth: authMiddleware.requireAuth }));
 
     const accounts = createAccountsRepository(pool, env.TOKEN_ENCRYPTION_KEY);
     const registry = createMailRegistry({

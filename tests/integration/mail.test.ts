@@ -478,3 +478,26 @@ test('a forged or mismatched page cursor is refused without reaching the databas
     }
     if (first.nextCursor) assert.equal((await client.get(`/emails?sort=oldest&cursor=${first.nextCursor}`)).status, 400);
 });
+
+test('search finds word prefixes in the text and parts of the subject or sender, in any language', async () => {
+    const client = await demo();
+    const { accounts } = await accountsOf(client);
+    await app.pool.query(
+        `INSERT INTO emails (account_id, provider_id, subject, sender_name, sender_address, body_text, received_at) VALUES
+        ($1, 's1', 'Quarterly numbers', 'Ana', 'ana@finance.example', 'The reconciliation spreadsheet is attached.', NOW()),
+        ($1, 's2', 'Состанок утре', 'Марко', 'marko@primer.example', 'Ќе се видиме во канцеларија.', NOW()),
+        ($1, 's3', '100% done', 'Bot', 'bot@ci.example', 'All green.', NOW())`,
+        [accounts[0]!.id],
+    );
+    const subjects = async (search: string) =>
+        (await mailOf(client, `?search=${encodeURIComponent(search)}`)).emails.map(email => email.subject).sort();
+    assert.deepEqual(await subjects('reconcil'), ['Quarterly numbers'], 'a word prefix in the text');
+    assert.deepEqual(await subjects('finance.exam'), ['Quarterly numbers'], 'part of the sender address');
+    assert.deepEqual(await subjects('arterly'), ['Quarterly numbers'], 'part of a word in the subject');
+    assert.deepEqual(await subjects('состанок'), ['Состанок утре'], 'Cyrillic, ignoring case');
+    assert.deepEqual(await subjects('канцелар'), ['Состанок утре']);
+    assert.deepEqual(await subjects('100%'), ['100% done'], '% is matched literally');
+    assert.deepEqual(await subjects('%'), ['100% done'], 'a lone % is not a wildcard');
+    assert.deepEqual(await subjects('_'), [], '_ is not a wildcard');
+    assert.deepEqual(await subjects('nothing-like-this'), []);
+});

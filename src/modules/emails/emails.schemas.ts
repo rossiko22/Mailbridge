@@ -77,9 +77,9 @@ export const sendBody = z.discriminatedUnion(
 );
 
 // The page cursor is opaque to clients: base64url of the sort it belongs to and the last row's sort key and ID.
-// The key is the received time in UTC with microseconds, or ±infinity for mail without a date (sorted last).
+// The key is the received time in UTC with microseconds, or -infinity for mail without a date (the oldest).
 // Its exact format is checked because it goes back into SQL as a timestamp.
-const sortKey = z.string().regex(/^(-?infinity|\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z)$/);
+const sortKey = z.string().regex(/^(-infinity|\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z)$/);
 const cursorPayload = z.tuple([
     z.enum(['newest', 'oldest']),
     sortKey,

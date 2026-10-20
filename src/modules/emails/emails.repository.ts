@@ -12,6 +12,17 @@ export const SYNC_LEASE_SECONDS = 300;
 export type OutgoingAction = 'compose' | 'reply' | 'forward';
 export type OutgoingState = 'pending' | 'accepted' | 'failed' | 'unknown';
 
+// Turns what the person typed into two searches: every word as a prefix in subject, sender and text
+// ("board pass" -> board:* & pass:*), and the whole text as a substring of subject and sender.
+// Words are reduced to letters and digits, so nothing typed can change the meaning of the text-search query;
+// in LIKE, %, _ and \ are escaped. Both reach SQL only as parameters.
+export function searchTerms(search: string): { like: string; words: string | null } | null {
+    const text = search.trim().toLowerCase();
+    if (!text) return null;
+    const words = (text.match(/[\p{L}\p{N}]+/gu) ?? []).slice(0, 8).map(word => `${word}:*`);
+    return { like: `%${text.replace(/[\\%_]/g, match => `\\${match}`)}%`, words: words.length ? words.join(' & ') : null };
+}
+
 // Every query is scoped to accounts owned by the signed-in user; nobody can read another person's mail.
 export function createEmailRepository(pool: Pool) {
     async function save(client: PoolClient, accountId: string, message: SyncedMessage) {
@@ -53,34 +64,44 @@ export function createEmailRepository(pool: Pool) {
     }
 
     // Keyset pagination: each page continues after the last row of the previous one, so mail arriving meanwhile
-    // never shifts or repeats rows, and a deep page costs the same as the first. Mail without a date sorts last.
+    // never shifts or repeats rows, and a deep page costs the same as the first. Mail without a date counts as the
+    // oldest. Each account contributes its next rows straight from the emails_account_order index (LATERAL), and
+    // only those few are merged, so "All mail" stays fast however much mail is saved.
     async function list(userId: string, filters: MailFilters = defaultFilters) {
-        const newest = filters.sort === 'newest';
         // Only these fixed SQL fragments vary with the sort; every value is a parameter.
-        const key = newest ? "COALESCE(e.received_at, '-infinity')" : "COALESCE(e.received_at, 'infinity')";
-        const order = newest ? 'DESC' : 'ASC';
-        const after = newest ? '<' : '>';
+        const order = filters.sort === 'newest' ? 'DESC' : 'ASC';
+        const after = filters.sort === 'newest' ? '<' : '>';
+        const search = searchTerms(filters.search);
         const result = await pool.query<{ sortKey: string; id: string }>(
-            `SELECT e.email_id AS id, e.account_id AS "accountId", e.subject, e.sender_name AS "senderName",
-                e.sender_address AS "senderAddress", e.preview, e.received_at AS "receivedAt", e.has_attachments AS "hasAttachments",
-                e.is_read AS "isRead",
-                CASE WHEN e.received_at IS NULL THEN $6
-                    ELSE to_char(e.received_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') END AS "sortKey"
-            FROM emails e JOIN mail_accounts a ON a.account_id = e.account_id
-            WHERE a.user_id = $1
-            AND ($2::uuid IS NULL OR e.account_id = $2)
-            AND (NOT $3::boolean OR NOT e.is_read)
-            AND ($4 = '' OR strpos(lower(e.subject || ' ' || e.sender_name || ' ' || e.sender_address || ' ' || e.body_text), lower($4)) > 0)
-            AND ($5::timestamptz IS NULL OR (${key}, e.email_id) ${after} ($5::timestamptz, $7::uuid))
-            ORDER BY ${key} ${order}, e.email_id ${order}
+            `SELECT e.id, e."accountId", e.subject, e."senderName", e."senderAddress", e.preview, e."receivedAt",
+                e."hasAttachments", e."isRead",
+                CASE WHEN e."receivedAt" IS NULL THEN '-infinity'
+                    ELSE to_char(e."receivedAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') END AS "sortKey"
+            FROM mail_accounts a
+            CROSS JOIN LATERAL (
+                SELECT e.email_id AS id, e.account_id AS "accountId", e.subject, e.sender_name AS "senderName",
+                    e.sender_address AS "senderAddress", e.preview, e.received_at AS "receivedAt",
+                    e.has_attachments AS "hasAttachments", e.is_read AS "isRead", COALESCE(e.received_at, '-infinity') AS position
+                FROM emails e
+                WHERE e.account_id = a.account_id
+                AND (NOT $3::boolean OR NOT e.is_read)
+                AND ($4::text IS NULL
+                    OR ($5::text IS NOT NULL AND e.search_vector @@ to_tsquery('simple', $5))
+                    OR lower(e.subject || ' ' || e.sender_name || ' ' || e.sender_address) LIKE $4)
+                AND ($6::timestamptz IS NULL OR (COALESCE(e.received_at, '-infinity'), e.email_id) ${after} ($6::timestamptz, $7::uuid))
+                ORDER BY COALESCE(e.received_at, '-infinity') ${order}, e.email_id ${order}
+                LIMIT ${PAGE_SIZE + 1}
+            ) e
+            WHERE a.user_id = $1 AND ($2::uuid IS NULL OR a.account_id = $2)
+            ORDER BY e.position ${order}, e.id ${order}
             LIMIT ${PAGE_SIZE + 1}`,
             [
                 userId,
                 filters.accountId,
                 filters.unreadOnly,
-                filters.search,
+                search?.like ?? null,
+                search?.words ?? null,
                 filters.after?.key ?? null,
-                newest ? '-infinity' : 'infinity',
                 filters.after?.id ?? null,
             ],
         );

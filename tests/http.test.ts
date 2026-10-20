@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Request, Response } from 'express';
+import { serializeError } from '../src/config/logger.js';
 import { MailError } from '../src/integrations/mail/errors.js';
 import { readDownload } from '../src/integrations/mail/http.js';
 import { errorMiddleware } from '../src/middleware/error.middleware.js';
@@ -35,10 +36,11 @@ test('a download without a declared size is cut off once it passes the limit', a
 });
 
 function handle(error: unknown) {
-    const result = { status: 0, body: undefined as unknown };
+    const result = { status: 0, body: undefined as unknown, logged: undefined as unknown };
     const response = {
         headersSent: false,
         locals: {},
+        err: undefined as unknown,
         status(code: number) {
             result.status = code;
             return response;
@@ -48,23 +50,17 @@ function handle(error: unknown) {
             return response;
         },
     };
-    const logged: string[] = [];
-    const original = console.error;
-    console.error = (text: string) => {
-        logged.push(text);
-    };
-    try {
-        errorMiddleware(error, {} as Request, response as unknown as Response, () => {});
-    } finally {
-        console.error = original;
-    }
-    return { ...result, logged };
+    errorMiddleware(error, {} as Request, response as unknown as Response, () => {});
+    // What the request logger would write for this response's error.
+    result.logged = response.err === undefined ? undefined : serializeError(response.err);
+    return result;
 }
+
 test('errors written for people pass through; everything else is hidden and logged without detail', () => {
     assert.deepEqual(handle(new MailError(404, 'Email not found.')), {
         status: 404,
         body: { error: { code: 'not_found', message: 'Email not found.' } },
-        logged: [],
+        logged: undefined,
     });
     assert.deepEqual(handle(new MailError(502, 'Sign in again.', true)).body, {
         error: { code: 'reconnect_required', message: 'Sign in again.' },
@@ -80,8 +76,8 @@ test('errors written for people pass through; everything else is hidden and logg
         [hidden.status, hidden.body],
         [500, { error: { code: 'internal_error', message: 'An unexpected server error occurred.' } }],
     );
-    assert.equal(hidden.logged.length, 1);
-    assert.ok(!hidden.logged[0]!.includes('hunter2'), 'error messages are not written to the log');
+    assert.equal((hidden.logged as { type: string }).type, 'Error');
+    assert.ok(!JSON.stringify(hidden.logged).includes('hunter2'), 'error messages are not written to the log');
 });
 
 test('stored credentials cannot be read with another key or after tampering', () => {

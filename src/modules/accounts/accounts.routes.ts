@@ -106,10 +106,7 @@ export function createAccountsRouter({
             if (error instanceof MailError) {
                 req.session.connectNotice = error.message;
                 await saveSession(req);
-            } else
-                console.error(
-                    JSON.stringify({ event: 'account-connect-error', provider: id, name: error instanceof Error ? error.name : 'Unknown' }),
-                );
+            } else req.log.error({ event: 'account-connect-error', provider: id, err: error }, 'mailbox connection failed');
             res.redirect(back('failed'));
         }
     });

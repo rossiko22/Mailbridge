@@ -72,19 +72,25 @@ export async function startApp() {
     const { createApp } = await import('../../src/app.js');
     const { createPool } = await import('../../src/config/database.js');
     const { env } = await import('../../src/config/env.js');
-    const pool = createPool(env);
-    const server = createApp({ pool, env }).listen(0, '127.0.0.1');
+    const { createLogger } = await import('../../src/config/logger.js');
+    // Log lines are collected instead of printed, so tests can check what was (and was not) written.
+    const logs: Array<Record<string, unknown>> = [];
+    const logger = createLogger({ level: 'info', destination: { write: line => void logs.push(JSON.parse(line)) } });
+    const pool = createPool(env, logger);
+    const server = createApp({ pool, env, logger }).listen(0, '127.0.0.1');
     await once(server, 'listening');
 
     return {
         url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
         pool,
         env,
+        logs,
         setUpstream(next: Upstream | undefined) {
             upstream = next;
         },
         async reset() {
             upstream = undefined;
+            logs.length = 0;
             await pool.query('TRUNCATE users, sessions, login_attempts CASCADE');
         },
         async close() {

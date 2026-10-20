@@ -88,16 +88,17 @@ function resetSetup(user: { userId: string; email: string; isActive: boolean } |
             stored.push({ userId, hash, expiresAt });
         },
     } as unknown as UserRepository;
-    const service = createAuthService(
+    const service = createAuthService({
         users,
-        {
+        mailer: {
             sendPasswordReset: async (to, link, minutes) => {
                 mailed.push({ to, link, minutes });
             },
         },
-        'https://mail.example',
-        () => 1_000_000,
-    );
+        publicOrigin: 'https://mail.example',
+        logger: { error: () => {} },
+        now: () => 1_000_000,
+    });
     return { service, stored, mailed };
 }
 test('a reset request stores only a hash and mails the token in the URL fragment', async () => {

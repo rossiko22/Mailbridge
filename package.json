@@ -59,6 +59,8 @@
     "node-pg-migrate": "^9.0.0",
     "nodemailer": "^10.1.0",
     "pg": "^8.23.1",
+    "pino": "10.4.0",
+    "pino-http": "11.0.0",
     "sanitize-html": "^2.18.0",
     "zod": "4.6.5"
   },

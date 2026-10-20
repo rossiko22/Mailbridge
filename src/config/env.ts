@@ -17,6 +17,7 @@ const schema = z
     .object({
         NODE_ENV: z.enum(['development', 'test', 'production']),
         PORT: z.preprocess(blankToUndefined, port().default(3000)),
+        LOG_LEVEL: z.preprocess(blankToUndefined, z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info')),
         // Where people reach the app, e.g. https://mail.example.com (no trailing slash). Required in production.
         PUBLIC_ORIGIN: optionalText(),
         // How many reverse proxies in front of the app may set X-Forwarded-For (0 = none, 1 = Caddy).
@@ -102,6 +103,7 @@ export function loadEnv(source: NodeJS.ProcessEnv) {
     return {
         NODE_ENV: value.NODE_ENV,
         PORT: value.PORT,
+        LOG_LEVEL: value.LOG_LEVEL,
         // Used for links in mail and OAuth redirect URIs. Falls back to localhost outside production.
         PUBLIC_ORIGIN: value.PUBLIC_ORIGIN ?? `http://localhost:${value.PORT}`,
         // The origin that state-changing requests must come from; null means "the host the request was sent to"

@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import type { Pool } from 'pg';
 import type { Env } from './config/env.js';
+import { createRequestLogger, type Logger } from './config/logger.js';
 import { createMailRegistry } from './integrations/mail/registry.js';
 import { createMailer } from './integrations/mailer.js';
 import { createAuthMiddleware } from './middleware/auth.middleware.js';
@@ -26,13 +27,16 @@ const publicDirectory = fileURLToPath(new URL('../public/', import.meta.url));
 export interface AppDependencies {
     pool: Pool;
     env: Env;
+    logger: Logger;
 }
 
 // Builds the whole application from its dependencies. Only server.ts and the tests call this.
-export function createApp({ pool, env }: AppDependencies) {
+export function createApp({ pool, env, logger }: AppDependencies) {
     const app = express();
 
     app.disable('x-powered-by');
+    // First, so every later line, refusal and error carries the request ID.
+    app.use(createRequestLogger(logger));
     // Only this many proxies in front of the app may tell it the client's address (X-Forwarded-For).
     if (env.TRUST_PROXY > 0) app.set('trust proxy', env.TRUST_PROXY);
     app.use(createSecurityHeaders({ production: env.NODE_ENV === 'production' }));
@@ -58,7 +62,12 @@ export function createApp({ pool, env }: AppDependencies) {
     const userRepository = createUserRepository(pool);
     const userService = createUserService(userRepository);
     const authMiddleware = createAuthMiddleware(userRepository);
-    const authService = createAuthService(userRepository, createMailer(env.SMTP, env.NODE_ENV), env.PUBLIC_ORIGIN);
+    const authService = createAuthService({
+        users: userRepository,
+        mailer: createMailer(env.SMTP, env.NODE_ENV, { log: message => logger.info(message), warn: message => logger.warn(message) }),
+        publicOrigin: env.PUBLIC_ORIGIN,
+        logger,
+    });
 
     app.post(
         '/auth/login',

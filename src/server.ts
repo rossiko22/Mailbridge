@@ -1,26 +1,29 @@
 import { createApp } from './app.js';
 import { checkDatabaseConnection, createPool } from './config/database.js';
 import { env } from './config/env.js';
+import { createLogger } from './config/logger.js';
 
-const pool = createPool(env);
+const logger = createLogger({ level: env.LOG_LEVEL });
+const pool = createPool(env, logger);
 try {
     await checkDatabaseConnection(pool);
-    console.log('PostgreSQL connection and schema checks successful');
-    const server = createApp({ pool, env }).listen(env.PORT, () => console.log(`Server running on http://localhost:${env.PORT}`));
+    logger.info('PostgreSQL connection and schema checks successful');
+    const server = createApp({ pool, env, logger }).listen(env.PORT, () => logger.info({ port: env.PORT }, 'server listening'));
     server.on('error', async error => {
-        console.error('Server startup failed:', error.message);
+        logger.fatal({ err: error }, 'server startup failed');
         await pool.end();
         process.exitCode = 1;
     });
     for (const signal of ['SIGINT', 'SIGTERM'] as const)
         process.once(signal, () => {
+            logger.info({ signal }, 'shutting down');
             server.close(async () => {
                 await pool.end();
             });
             server.closeIdleConnections();
         });
 } catch (error) {
-    console.error('Database unavailable. Check configuration and run migrations.', error instanceof Error ? error.message : '');
+    logger.fatal({ err: error }, 'database unavailable; check the configuration and run the migrations');
     await pool.end();
     process.exitCode = 1;
 }

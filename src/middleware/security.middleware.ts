@@ -1,33 +1,12 @@
 import type { RequestHandler } from 'express';
-import { createHmac, randomUUID } from 'node:crypto';
+import { createHmac } from 'node:crypto';
 import type { Pool } from 'pg';
 import { sendError } from '../http/errors.js';
 
-// Request ID, the request log line (production) and the security headers every response carries.
+// The security headers every response carries. Request IDs and request logs come from the request logger.
 export const createSecurityHeaders =
     ({ production }: { production: boolean }): RequestHandler =>
-    (req, res, next) => {
-        const requestId = randomUUID();
-        res.set('X-Request-ID', requestId);
-        res.locals.requestId = requestId;
-        if (production && req.path !== '/health') {
-            const started = Date.now();
-            // The session is absent on requests refused before it loads.
-            res.once('finish', () =>
-                console.log(
-                    JSON.stringify({
-                        event: 'request',
-                        requestId,
-                        method: req.method,
-                        path: req.path,
-                        status: res.statusCode,
-                        durationMs: Date.now() - started,
-                        userId: (req.session as typeof req.session | undefined)?.userId,
-                        ip: req.ip,
-                    }),
-                ),
-            );
-        }
+    (_req, res, next) => {
         res.set({
             'Content-Security-Policy':
                 "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",

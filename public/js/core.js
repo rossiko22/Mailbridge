@@ -123,8 +123,15 @@
     };
     document.addEventListener('menu-open', onOpen);
     document.addEventListener('click', onClick);
+    // role="menu" promises arrow-key movement between items (WAI-ARIA menu pattern).
     menu.addEventListener('keydown', event => {
       if (event.key === 'Escape') close(true);
+      if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+      const items = [...menu.querySelectorAll('a,button')];
+      const index = items.indexOf(document.activeElement);
+      const next = items[(index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length];
+      event.preventDefault();
+      next?.focus();
     });
     menu.addEventListener('click', event => {
       if (event.target.closest('button,a')) close();

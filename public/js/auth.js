@@ -1,7 +1,7 @@
 // Sign in, create account, forgot password and reset password. One script, four pages.
 (() => {
   const { icon, api, json, APP_NAME } = window.App;
-  const form = document.querySelector('[data-auth]');
+  const form = /** @type {HTMLFormElement} */ (document.querySelector('[data-auth]'));
   const page = form.dataset.auth;
   const card = document.querySelector('.auth__card');
 
@@ -34,8 +34,8 @@
     });
   });
 
-  const errorBox = document.querySelector('#form-message');
-  const doneBox = document.querySelector('#form-done');
+  const errorBox = /** @type {HTMLElement} */ (document.querySelector('#form-message'));
+  const doneBox = /** @type {HTMLElement | null} */ (document.querySelector('#form-done'));
   function show(box, other, name, text) {
     if (other) other.hidden = true;
     box.replaceChildren();
@@ -66,7 +66,7 @@
   if (page === 'login') {
     api('/auth/config')
       .then(config =>
-        document.querySelectorAll('[data-needs-registration]').forEach(el => {
+        /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('[data-needs-registration]')).forEach(el => {
           el.hidden = !config.registration;
         }),
       )
@@ -92,7 +92,7 @@
     if (!resetToken) {
       form.hidden = true;
       fail('This reset link is invalid or has expired.');
-      document.querySelector('#request-link').hidden = false;
+      /** @type {HTMLElement} */ (document.querySelector('#request-link')).hidden = false;
     }
   }
 
@@ -123,7 +123,7 @@
       try {
         await api('/auth/reset', json('POST', { token: resetToken, password }));
       } catch (error) {
-        document.querySelector('#request-link').hidden = false;
+        /** @type {HTMLElement} */ (document.querySelector('#request-link')).hidden = false;
         throw error;
       }
       form.hidden = true;
@@ -132,7 +132,7 @@
     },
   };
 
-  const submit = form.querySelector('[type="submit"]');
+  const submit = /** @type {HTMLButtonElement} */ (form.querySelector('[type="submit"]'));
   form.addEventListener('submit', async event => {
     event.preventDefault();
     clear();

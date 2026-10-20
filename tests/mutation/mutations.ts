@@ -151,6 +151,7 @@ export const mutations: Mutation[] = [
     {
         name: 'search stops escaping LIKE wildcards',
         file: 'src/modules/emails/emails.repository.ts',
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: this is the source text to find, not a template.
         find: 'text.replace(/[\\\\%_]/g, match => `\\\\${match}`)',
         replace: 'text',
         tests: [INTEGRATION('mail')],

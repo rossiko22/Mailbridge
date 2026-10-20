@@ -84,7 +84,7 @@
           resolve(canvas.toDataURL('image/jpeg', 0.88));
         };
         img.onerror = () => reject(new Error('That file is not a picture we can read.'));
-        img.src = reader.result;
+        img.src = String(reader.result);
       };
       reader.readAsDataURL(file);
     });

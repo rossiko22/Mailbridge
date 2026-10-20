@@ -9,7 +9,7 @@ import { createAuthMiddleware } from './middleware/auth.middleware.js';
 import { errorMiddleware, notFoundMiddleware } from './middleware/error.middleware.js';
 import { createRequireSameSiteJson } from './middleware/json.middleware.js';
 import { createSecurityHeaders, throttle } from './middleware/security.middleware.js';
-import { createSessionMiddleware } from './middleware/session.middleware.js';
+import { createSessionMiddleware, sessionCookie } from './middleware/session.middleware.js';
 import { createAccountsRepository } from './modules/accounts/accounts.repository.js';
 import { createAccountsRouter } from './modules/accounts/accounts.routes.js';
 import { createAudit } from './modules/audit/audit.js';
@@ -57,7 +57,8 @@ export function createApp({ pool, env, logger }: AppDependencies) {
     const smallJson = express.json({ limit: '64kb' });
     const photoJson = express.json({ limit: '800kb' });
     app.use((req, res, next) => (req.path === '/users/me/avatar' ? photoJson : smallJson)(req, res, next));
-    app.use(createSessionMiddleware(pool, { secret: env.SESSION_SECRET, secure: env.NODE_ENV === 'production' }));
+    const cookie = sessionCookie(env.NODE_ENV === 'production');
+    app.use(createSessionMiddleware(pool, { secret: env.SESSION_SECRET, cookie }));
 
     const userRepository = createUserRepository(pool);
     const userService = createUserService(userRepository);
@@ -97,6 +98,7 @@ export function createApp({ pool, env, logger }: AppDependencies) {
             auth: authService,
             requireAuth: authMiddleware.requireAuth,
             allowRegistration: env.ALLOW_REGISTRATION,
+            cookie,
             audit,
         }),
     );

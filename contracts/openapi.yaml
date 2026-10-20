@@ -1099,7 +1099,9 @@ components:
       type: apiKey
       in: cookie
       name: session
-      description: Server-side session. HttpOnly, SameSite=Lax, Secure in production; ends after 8 idle hours and at most 7 days after sign-in.
+      description: |
+        Server-side session. Named `__Host-session` in production (HTTPS only, this host only, no Domain) and `session`
+        in development. HttpOnly, SameSite=Lax; ends after 8 idle hours and at most 7 days after sign-in.
 
   headers:
     SessionCookie:

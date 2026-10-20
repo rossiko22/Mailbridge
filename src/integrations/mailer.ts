@@ -23,6 +23,20 @@ const html = (link: string, minutes: number) => `<p>Someone asked to reset the p
 <p><a href="${link}">Choose a new password</a> (valid for ${minutes} minutes, one use).</p>
 <p>If this was not you, ignore this message. Your password stays the same.</p>`;
 
+// On port 587 the connection starts in plain text and upgrades with STARTTLS. Without requireTLS a network attacker
+// can remove the server's STARTTLS offer and read the reset link (and the SMTP password). Production refuses to
+// send without TLS; development keeps working with Mailpit, which has no TLS.
+export function transportOptions(smtp: SmtpConfig, nodeEnv: string) {
+    return {
+        host: smtp.host,
+        port: smtp.port,
+        secure: smtp.secure,
+        requireTLS: !smtp.secure && nodeEnv === 'production',
+        tls: { minVersion: 'TLSv1.2' as const },
+        ...(smtp.user ? { auth: { user: smtp.user, pass: smtp.password ?? '' } } : {}),
+    };
+}
+
 // Without SMTP settings, development prints the link to the server console so the flow can still be tried.
 // Production never prints a reset link.
 export function createMailer(smtp: SmtpConfig | undefined, nodeEnv: string, log: Pick<Console, 'log' | 'warn'> = console): Mailer {
@@ -34,12 +48,7 @@ export function createMailer(smtp: SmtpConfig | undefined, nodeEnv: string, log:
             },
         };
     }
-    const transport = nodemailer.createTransport({
-        host: smtp.host,
-        port: smtp.port,
-        secure: smtp.secure,
-        ...(smtp.user ? { auth: { user: smtp.user, pass: smtp.password ?? '' } } : {}),
-    });
+    const transport = nodemailer.createTransport(transportOptions(smtp, nodeEnv));
     return {
         async sendPasswordReset(to, link, minutes) {
             await transport.sendMail({

@@ -230,7 +230,7 @@ docker compose --env-file .env.production -f compose.production.yaml exec app no
 - The compose file builds the image on the host. To run the image published by CI instead, set the `app` service's `image` to `ghcr.io/rossiko22/mailbridge:latest` and remove `build`.
 - [`deploy/backup.sh`](deploy/backup.sh) writes a database dump to `backups/`; keep copies off the host.
 - [`deploy/smoke-test.sh`](deploy/smoke-test.sh) is the same check CI runs against the image.
-- If someone is locked out, `npm run admin:reset-password` sets a new password from the server. It reads `RESET_USER_EMAIL` and `RESET_USER_PASSWORD` (at least 16 characters) from the environment.
+- If someone is locked out, `node dist/scripts/reset-password.js` (run inside the app container) sets a new password from the server. It reads `RESET_USER_EMAIL` and `RESET_USER_PASSWORD` (at least 16 characters) from the environment.
 
 ## Project layout
 

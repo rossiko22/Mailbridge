@@ -2,6 +2,7 @@ import { after, before, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { createAccountsRepository } from '../../src/modules/accounts/accounts.repository.js';
+import { createTokenVault } from '../../src/security/token-vault.js';
 import { DEMO_EMAIL, DEMO_PASSWORD, seedDemoData } from '../../src/scripts/demo-data.js';
 import { type ApiError, createClient, register, startApp, type TestApp, type TestClient } from '../support/harness.js';
 
@@ -42,7 +43,7 @@ const mailOf = async (client: TestClient, query = '') =>
 
 // A Gmail account whose stored sign-in is still valid, so no token refresh is needed.
 async function connectGmail(userId: string, email = 'real@gmail.example') {
-    const accounts = createAccountsRepository(app.pool, app.env.TOKEN_ENCRYPTION_KEY);
+    const accounts = createAccountsRepository(app.pool, createTokenVault(app.env.TOKEN_ENCRYPTION_KEY));
     const saved = await accounts.upsertConnected(
         userId,
         'gmail',

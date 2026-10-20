@@ -77,10 +77,30 @@ export interface MailProvider {
     client(accountId: string): MailClient;
 }
 
-// Lets a provider refresh tokens safely: the account row stays locked while credentials change.
-// Values passed in and out are plain; the store handles encryption.
+// Decrypted credentials of one account. Plain values in and out; the store handles encryption.
+export interface StoredCredentials {
+    value: string;
+    // Saves new credentials only if nobody changed them since they were loaded (compare-and-swap).
+    // Returns false when another request saved first; its credentials are just as fresh, so this is not an error.
+    replace(next: string): Promise<boolean>;
+}
+
+// No lock is held while a provider talks to the network: credentials are read, a refresh (rarely) happens,
+// and the result is written back with compare-and-swap.
 export interface CredentialStore {
-    withCredentials<T>(accountId: string, work: (current: string | null, save: (next: string) => Promise<void>) => Promise<T>): Promise<T>;
+    load(accountId: string): Promise<StoredCredentials | null>;
+}
+
+// Runs at most one `work` per key at a time in this process; concurrent callers share its result.
+export function singleFlight<T>() {
+    const running = new Map<string, Promise<T>>();
+    return (key: string, work: () => Promise<T>): Promise<T> => {
+        const existing = running.get(key);
+        if (existing) return existing;
+        const started = work().finally(() => running.delete(key));
+        running.set(key, started);
+        return started;
+    };
 }
 
 // Download size ceiling shared by every provider.

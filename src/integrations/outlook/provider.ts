@@ -1,7 +1,14 @@
 import { type AuthenticationResult, ConfidentialClientApplication, InteractionRequiredAuthError } from '@azure/msal-node';
 import { createHash, randomBytes } from 'node:crypto';
 import { MailError } from '../mail/errors.js';
-import type { ConnectedProfile, CredentialStore, MailClient, MailProvider, PendingAuth } from '../mail/types.js';
+import {
+    type ConnectedProfile,
+    type CredentialStore,
+    type MailClient,
+    type MailProvider,
+    type PendingAuth,
+    singleFlight,
+} from '../mail/types.js';
 import { createGraphClient } from './graph.js';
 
 export const outlookScopes = [
@@ -82,14 +89,19 @@ export function createOutlookProvider(
         return { email, displayName: profile.displayName?.trim() ?? '', credentials: JSON.stringify(stored) };
     }
 
+    // MSAL answers from its cache while the access token is valid and renews it with the refresh token otherwise.
+    // Concurrent requests for one account share a single attempt; a changed cache is saved with compare-and-swap,
+    // so no database lock spans the network call.
+    const renewing = singleFlight<string>();
     async function accessToken(accountId: string): Promise<string> {
-        return store.withCredentials(accountId, async (current, save) => {
-            if (!current) throw reconnect();
-            const stored = JSON.parse(current) as Stored;
+        return renewing(accountId, async () => {
+            const stored = await store.load(accountId);
+            if (!stored) throw reconnect();
+            const current = JSON.parse(stored.value) as Stored;
             const msal = factory(config);
             const cache = msal.getTokenCache();
-            cache.deserialize(stored.cache);
-            const account = await cache.getAccountByHomeId(stored.homeAccountId);
+            cache.deserialize(current.cache);
+            const account = await cache.getAccountByHomeId(current.homeAccountId);
             if (!account) throw reconnect();
             let result: AuthenticationResult | null;
             try {
@@ -100,7 +112,8 @@ export function createOutlookProvider(
             }
             if (!result?.accessToken) throw reconnect();
             const next = cache.serialize();
-            if (next !== stored.cache) await save(JSON.stringify({ cache: next, homeAccountId: stored.homeAccountId } satisfies Stored));
+            if (next !== current.cache)
+                await stored.replace(JSON.stringify({ cache: next, homeAccountId: current.homeAccountId } satisfies Stored));
             return result.accessToken;
         });
     }

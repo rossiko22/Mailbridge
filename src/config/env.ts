@@ -25,6 +25,8 @@ const schema = z
         SESSION_SECRET: text(),
         // Encrypts stored mailbox credentials. Falls back to SESSION_SECRET outside production.
         TOKEN_ENCRYPTION_KEY: optionalText(),
+        // Only while rotating: the old key, still accepted for reading. See docs/runbooks/key-rotation.md.
+        TOKEN_ENCRYPTION_KEY_PREVIOUS: optionalText(),
 
         POSTGRES_HOST: text(),
         POSTGRES_PORT: port(),
@@ -89,6 +91,12 @@ const schema = z
         }
         if (value.SESSION_SECRET === value.TOKEN_ENCRYPTION_KEY)
             problem('TOKEN_ENCRYPTION_KEY', 'TOKEN_ENCRYPTION_KEY must differ from SESSION_SECRET.');
+        const previous = value.TOKEN_ENCRYPTION_KEY_PREVIOUS;
+        if (previous !== undefined && (previous.length < 32 || previous === value.TOKEN_ENCRYPTION_KEY))
+            problem(
+                'TOKEN_ENCRYPTION_KEY_PREVIOUS',
+                'TOKEN_ENCRYPTION_KEY_PREVIOUS must be the old key: at least 32 characters, not the current one.',
+            );
     });
 
 export function loadEnv(source: NodeJS.ProcessEnv) {
@@ -112,6 +120,7 @@ export function loadEnv(source: NodeJS.ProcessEnv) {
         TRUST_PROXY: value.TRUST_PROXY,
         SESSION_SECRET: value.SESSION_SECRET,
         TOKEN_ENCRYPTION_KEY: value.TOKEN_ENCRYPTION_KEY ?? value.SESSION_SECRET,
+        TOKEN_ENCRYPTION_KEY_PREVIOUS: value.TOKEN_ENCRYPTION_KEY_PREVIOUS,
         POSTGRES_HOST: value.POSTGRES_HOST,
         POSTGRES_PORT: value.POSTGRES_PORT,
         POSTGRES_DB: value.POSTGRES_DB,

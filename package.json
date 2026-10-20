@@ -21,7 +21,8 @@
     "start:render": "node dist/scripts/migrate.js && node dist/server.js",
     "admin:reset-password": "node dist/scripts/reset-password.js",
     "lint": "biome check .",
-    "lint:fix": "biome check --write ."
+    "lint:fix": "biome check --write .",
+    "admin:reseal-credentials": "node dist/scripts/reseal-credentials.js"
   },
   "repository": {
     "type": "git",

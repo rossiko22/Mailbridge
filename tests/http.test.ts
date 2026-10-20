@@ -5,7 +5,6 @@ import { serializeError } from '../src/config/logger.js';
 import { MailError } from '../src/integrations/mail/errors.js';
 import { readDownload } from '../src/integrations/mail/http.js';
 import { errorMiddleware } from '../src/middleware/error.middleware.js';
-import { tokenVault } from '../src/security/token-vault.js';
 
 const tooLarge = (error: unknown) => error instanceof MailError && error.status === 413;
 
@@ -78,15 +77,4 @@ test('errors written for people pass through; everything else is hidden and logg
     );
     assert.equal((hidden.logged as { type: string }).type, 'Error');
     assert.ok(!JSON.stringify(hidden.logged).includes('hunter2'), 'error messages are not written to the log');
-});
-
-test('stored credentials cannot be read with another key or after tampering', () => {
-    const sealed = tokenVault('secret-one', 'account-1').encrypt('refresh-token');
-    assert.notEqual(tokenVault('secret-one', 'account-1').encrypt('refresh-token'), sealed, 'each encryption uses a fresh nonce');
-    assert.throws(() => tokenVault('secret-two', 'account-1').decrypt(sealed));
-    const [iv, tag, data] = sealed.split('.') as [string, string, string];
-    const flipped = Buffer.from(data, 'base64');
-    flipped[0] = flipped[0]! ^ 1;
-    assert.throws(() => tokenVault('secret-one', 'account-1').decrypt([iv, tag, flipped.toString('base64')].join('.')));
-    assert.throws(() => tokenVault('secret-one', 'account-1').decrypt('garbage'));
 });

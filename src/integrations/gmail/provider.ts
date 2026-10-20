@@ -1,6 +1,13 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { MailError } from '../mail/errors.js';
-import type { ConnectedProfile, CredentialStore, MailClient, MailProvider, PendingAuth } from '../mail/types.js';
+import {
+    type ConnectedProfile,
+    type CredentialStore,
+    type MailClient,
+    type MailProvider,
+    type PendingAuth,
+    singleFlight,
+} from '../mail/types.js';
 import { createGmailClient, createQuotaBudget, type QuotaBudget } from './api.js';
 
 export const gmailScopes = [
@@ -104,14 +111,18 @@ export function createGmailProvider(
         return { email, displayName: profile.name?.trim() ?? '', credentials: JSON.stringify(stored) };
     }
 
+    // A token that is still valid for a minute is used as is (one plain read). Otherwise it is renewed, once per
+    // account at a time in this process, and saved with compare-and-swap; no database lock spans the network call.
+    const renewing = singleFlight<string>();
     async function accessToken(accountId: string): Promise<string> {
-        return store.withCredentials(accountId, async (current, save) => {
-            if (!current) throw reconnect();
-            const stored = JSON.parse(current) as Stored;
-            if (stored.expiresAt - 60_000 > now()) return stored.accessToken;
+        const stored = await store.load(accountId);
+        if (!stored) throw reconnect();
+        const current = JSON.parse(stored.value) as Stored;
+        if (current.expiresAt - 60_000 > now()) return current.accessToken;
+        return renewing(accountId, async () => {
             let result: Awaited<ReturnType<typeof token>>;
             try {
-                result = await token({ grant_type: 'refresh_token', refresh_token: stored.refreshToken });
+                result = await token({ grant_type: 'refresh_token', refresh_token: current.refreshToken });
             } catch {
                 throw new MailError(502, 'Could not reach Google to renew the sign-in. Try again shortly.');
             }
@@ -119,9 +130,10 @@ export function createGmailProvider(
             if (result.status === 400 || result.status === 401) throw reconnect();
             if (result.status !== 200 || !result.data.access_token || typeof result.data.expires_in !== 'number')
                 throw new MailError(502, 'Google could not renew the sign-in. Try again shortly.');
-            await save(
+            // If another server process renewed first, its token is just as good; this one is still valid to use.
+            await stored.replace(
                 JSON.stringify({
-                    refreshToken: result.data.refresh_token ?? stored.refreshToken,
+                    refreshToken: result.data.refresh_token ?? current.refreshToken,
                     accessToken: result.data.access_token,
                     expiresAt: now() + result.data.expires_in * 1000,
                 } satisfies Stored),

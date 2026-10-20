@@ -77,6 +77,13 @@ jobs:
       # Running the migrations twice proves they are safe to re-run on an up-to-date database.
       - run: npm run migration
       - run: npm run migration
+      # Every migration after 008 (which replaced the old ticket schema and is deliberately one-way) must roll back
+      # and apply again cleanly.
+      - name: Roll back and re-apply every reversible migration
+        run: |
+          reversible=$(find database/migrations -name '*.sql' | awk -F/ '$NF >= "009"' | wc -l)
+          npm run migration -- down "$reversible"
+          npm run migration
       - name: Unit and integration tests with coverage thresholds
         run: npm run test:coverage 2>&1 | tee coverage.txt
       - name: Coverage summary

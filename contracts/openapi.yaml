@@ -1,0 +1,1548 @@
+openapi: 3.1.0
+info:
+  title: Mailbridge API
+  version: 1.0.0
+  summary: Read and send Outlook and Gmail mail from one inbox.
+  description: |
+    The API used by the Mailbridge web client. It is same-origin only and is not meant for third-party clients.
+
+    **Sessions.** Signing in sets an `HttpOnly` session cookie. Every operation marked with `cookieAuth` answers
+    `401 unauthenticated` without it.
+
+    **Cross-site request forgery.** Every request that is not `GET`, `HEAD` or `OPTIONS` must send
+    `Content-Type: application/json`, must not carry `Sec-Fetch-Site: cross-site`, and, when it carries an `Origin`
+    header, that origin must be the app's own. Anything else is refused with `415 unsupported_request`.
+    A browser form or a cross-site `fetch` cannot meet all three without a CORS preflight, which the server never approves.
+
+    **Other people's data.** Mail, accounts and attachments that belong to someone else answer `404 not_found`,
+    exactly like ones that do not exist, so their existence is never revealed.
+
+    **Errors.** Every error has the same body (`Error`). Match on `error.code`; `error.message` is for people and may change.
+
+    **Unknown fields.** Request bodies are strict: a field that is not listed here is a `400 validation_failed`.
+  license:
+    name: ISC
+    identifier: ISC
+servers:
+  - url: /
+    description: The same origin the web client is served from.
+security:
+  - cookieAuth: []
+tags:
+  - name: Auth
+    description: Sign-up, sign-in, sessions and passwords.
+  - name: Users
+    description: The signed-in person's profile.
+  - name: Accounts
+    description: Connected Outlook and Gmail mailboxes.
+  - name: Emails
+    description: The combined inbox, reading and sending.
+  - name: Operations
+    description: Health checks for the platform.
+
+paths:
+  /auth/config:
+    get:
+      tags: [Auth]
+      operationId: getAuthConfig
+      summary: Whether this server accepts new accounts
+      security: []
+      responses:
+        '200':
+          description: Server settings the sign-in page needs.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [registration]
+                properties:
+                  registration:
+                    type: boolean
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      operationId: signIn
+      summary: Sign in with email and password
+      description: |
+        A wrong password and an unknown address get the same answer in the same time.
+        Limited to 50 attempts per 15 minutes per client address and 10 per account.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email, password]
+              properties:
+                email:
+                  $ref: '#/components/schemas/EmailAddress'
+                password:
+                  type: string
+                  minLength: 1
+                  maxLength: 1024
+      responses:
+        '200':
+          description: Signed in. A new session cookie is set (the session ID is replaced).
+          headers:
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InvalidCredentials'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedRequest'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /auth/register:
+    post:
+      tags: [Auth]
+      operationId: register
+      summary: Create an account and sign in
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email, password]
+              properties:
+                email:
+                  $ref: '#/components/schemas/EmailAddress'
+                password:
+                  $ref: '#/components/schemas/NewPassword'
+                displayName:
+                  $ref: '#/components/schemas/DisplayName'
+      responses:
+        '201':
+          description: Account created and signed in.
+          headers:
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          description: Registration is turned off on this server (`registration_disabled`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: An account with this email already exists (`email_taken`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '415':
+          $ref: '#/components/responses/UnsupportedRequest'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /auth/forgot:
+    post:
+      tags: [Auth]
+      operationId: requestPasswordReset
+      summary: Email a password reset link
+      description: Always answers the same way, whether or not the address has an account. The link is valid for 30 minutes.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email]
+              properties:
+                email:
+                  $ref: '#/components/schemas/EmailAddress'
+      responses:
+        '200':
+          description: Accepted.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [message]
+                properties:
+                  message:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '415':
+          $ref: '#/components/responses/UnsupportedRequest'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /auth/reset:
+    post:
+      tags: [Auth]
+      operationId: resetPassword
+      summary: Set a new password with a reset link
+      description: Spends the token, sets the password and signs the account out of every session.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [token, password]
+              properties:
+                token:
+                  type: string
+                  pattern: '^[A-Za-z0-9_-]{20,100}$'
+                password:
+                  $ref: '#/components/schemas/NewPassword'
+      responses:
+        '200':
+          description: Password changed.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [reset]
+                properties:
+                  reset:
+                    type: boolean
+                    const: true
+        '400':
+          description: Invalid input (`validation_failed`), or the link is unknown, used or expired (`invalid_reset_token`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '415':
+          $ref: '#/components/responses/UnsupportedRequest'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /auth/password:
+    post:
+      tags: [Auth]
+      operationId: changePassword
+      summary: Change the password
+      description: Needs the current password. Ends every session, including this one. Limited to 10 attempts per 15 minutes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [currentPassword, newPassword]
+              properties:
+                currentPassword:
+                  type: string
+                  minLength: 1
+                  maxLength: 1024
+                newPassword:
+                  $ref: '#/components/schemas/NewPassword'
+      responses:
+        '200':
+          description: Changed; the session cookie is cleared.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [changed]
+                properties:
+                  changed:
+                    type: boolean
+                    const: true
+        '400':
+          description: Invalid input (`validation_failed`) or the current password is wrong (`wrong_password`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '415':
+          $ref: '#/components/responses/UnsupportedRequest'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      operationId: getCurrentUser
+      summary: The signed-in person
+      responses:
+        '200':
+          description: The current user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+
+  /auth/activity:
+    get:
+      tags: [Auth]
+      operationId: listActivity
+      summary: The signed-in person's recent security events
+      description: The latest 50 events from the audit log about this account (kept for 90 days).
+      responses:
+        '200':
+          description: Newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [events]
+                properties:
+                  events:
+                    type: array
+                    maxItems: 50
+                    items:
+                      $ref: '#/components/schemas/AuditEntry'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      operationId: signOut
+      summary: Sign out
+      description: Ends the session on the server. Succeeds without a session too.
+      security:
+        - {}
+        - cookieAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+      responses:
+        '200':
+          description: Signed out; the session cookie is cleared.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [loggedOut]
+                properties:
+                  loggedOut:
+                    type: boolean
+                    const: true
+        '415':
+          $ref: '#/components/responses/UnsupportedRequest'
+
+  /users/me:
+    patch:
+      tags: [Users]
+      operationId: updateProfile
+      summary: Change the display name
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [displayName]
+              properties:
+                displayName:
+                  $ref: '#/components/schemas/DisplayName'
+      responses:
+        '200':
+          description: The updated user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '415':
+          $ref: '#/components/responses/UnsupportedRequest'
+
+  /users/me/avatar:
+    get:
+      tags: [Users]
+      operationId: getAvatar
+      summary: The profile photo
+      parameters:
+        - name: v
+          in: query
+          required: false
+          description: Cache buster; the `avatarUrl` of the user carries it.
+          schema:
+            type: string
+            pattern: '^\d{1,16}$'
+      responses:
+        '200':
+          description: The image, cached privately for a year (the URL changes with the photo).
+          content:
+            image/png:
+              schema:
+                type: string
+                contentMediaType: image/png
+            image/jpeg:
+              schema:
+                type: string
+                contentMediaType: image/jpeg
+            image/webp:
+              schema:
+                type: string
+                contentMediaType: image/webp
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Users]
+      operationId: setAvatar
+      summary: Upload a profile photo
+      description: The server checks the file signature, not only the label. Limited to 30 uploads per 15 minutes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [image]
+              properties:
+                image:
+                  type: string
+                  description: A base64 data URL of a PNG, JPEG or WebP image of at most 512 KiB.
+                  pattern: '^data:image/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$'
+                  maxLength: 699114
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [saved]
+                properties:
+                  saved:
+                    type: boolean
+                    const: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedRequest'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    delete:
+      tags: [Users]
+      operationId: removeAvatar
+      summary: Remove the profile photo
+      responses:
+        '200':
+          description: Removed (also when there was none).
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [removed]
+                properties:
+                  removed:
+                    type: boolean
+                    const: true
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '415':
+          $ref: '#/components/responses/UnsupportedRequest'
+
+  /accounts:
+    get:
+      tags: [Accounts]
+      operationId: listAccounts
+      summary: Connected mailboxes and the providers this person may connect
+      responses:
+        '200':
+          description: The person's accounts.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [accounts, providers]
+                properties:
+                  accounts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Account'
+                  providers:
+                    type: object
+                    description: Present providers may be offered; `false` means known but not configured on this server.
+                    additionalProperties: false
+                    properties:
+                      outlook:
+                        type: boolean
+                      gmail:
+                        type: boolean
+                  notice:
+                    type: string
+                    description: Why the last connection attempt failed. Shown once.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+
+  /accounts/connect/{provider}:
+    get:
+      tags: [Accounts]
+      operationId: connectAccount
+      summary: Start connecting a mailbox (browser navigation)
+      description: |
+        Redirects to the provider's consent screen with PKCE (S256) and a single-use `state`, which expire after 10 minutes.
+        Signed-out visitors are redirected to the sign-in page instead. Limited to 30 per 15 minutes.
+      parameters:
+        - $ref: '#/components/parameters/Provider'
+      responses:
+        '302':
+          description: To the provider, to `/index.html` when signed out, or back to the app with `connect=unavailable`.
+          headers:
+            Location:
+              $ref: '#/components/headers/Location'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /accounts/callback/{provider}:
+    get:
+      tags: [Accounts]
+      operationId: completeConnection
+      summary: Where the provider sends the browser back (browser navigation)
+      parameters:
+        - $ref: '#/components/parameters/Provider'
+        - name: code
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 4096
+        - name: state
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 200
+      responses:
+        '302':
+          description: |
+            Back to `/app.html?connect=<outcome>`, where outcome is `ok`, `renewed`, `denied`, `invalid-state`,
+            `unavailable` or `failed`. Signed-out visitors go to `/index.html`.
+          headers:
+            Location:
+              $ref: '#/components/headers/Location'
+
+  /accounts/{accountId}/sync:
+    post:
+      tags: [Accounts]
+      operationId: syncAccount
+      summary: Fetch the next page of changes from the provider
+      description: Call again while `hasMore` is true. A demo mailbox reports nothing to do.
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+      responses:
+        '200':
+          description: One page was applied.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [processed, removed, hasMore]
+                properties:
+                  processed:
+                    type: integer
+                    minimum: 0
+                  removed:
+                    type: integer
+                    minimum: 0
+                  hasMore:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ProviderDenied'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '415':
+          $ref: '#/components/responses/UnsupportedRequest'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '502':
+          $ref: '#/components/responses/ProviderError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+
+  /accounts/{accountId}:
+    delete:
+      tags: [Accounts]
+      operationId: removeAccount
+      summary: Disconnect a mailbox and delete its saved mail
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+      responses:
+        '200':
+          description: Removed.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [removed]
+                properties:
+                  removed:
+                    type: boolean
+                    const: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '415':
+          $ref: '#/components/responses/UnsupportedRequest'
+
+  /emails:
+    get:
+      tags: [Emails]
+      operationId: listEmails
+      summary: The combined inbox, one page at a time
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          description: The `nextCursor` of the previous page. Omit it for the first page.
+          schema:
+            type: string
+            pattern: '^[A-Za-z0-9_-]{1,200}$'
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [newest, oldest]
+            default: newest
+        - name: search
+          in: query
+          required: false
+          description: Words to find in subject, sender and text.
+          schema:
+            type: string
+            maxLength: 200
+        - name: account
+          in: query
+          required: false
+          description: Only this account. Omit for every account.
+          schema:
+            $ref: '#/components/schemas/Uuid'
+        - name: unread
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ['true', 'false']
+      responses:
+        '200':
+          description: Up to 50 messages.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [emails, hasMore, nextCursor]
+                properties:
+                  emails:
+                    type: array
+                    maxItems: 50
+                    items:
+                      $ref: '#/components/schemas/EmailSummary'
+                  hasMore:
+                    type: boolean
+                  nextCursor:
+                    description: Pass as `cursor` to get the next page; null on the last page.
+                    oneOf:
+                      - type: string
+                      - type: 'null'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+
+  /emails/compose:
+    post:
+      tags: [Emails]
+      operationId: composeEmail
+      summary: Send a new message from one of the person's accounts
+      description: |
+        `requestId` makes retries safe: the same request ID with the same content is accepted once and never sent twice;
+        with different content it is a `409 conflict`. Limited to 60 sends per 15 minutes per person.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [accountId, requestId, subject, body, to]
+              properties:
+                accountId:
+                  $ref: '#/components/schemas/Uuid'
+                requestId:
+                  $ref: '#/components/schemas/Uuid'
+                subject:
+                  type: string
+                  minLength: 1
+                  maxLength: 250
+                  pattern: '^[^\r\n]*\S[^\r\n]*$'
+                body:
+                  type: string
+                  minLength: 1
+                  maxLength: 20000
+                to:
+                  type: array
+                  minItems: 1
+                  maxItems: 20
+                  items:
+                    $ref: '#/components/schemas/RecipientAddress'
+                cc:
+                  type: array
+                  maxItems: 20
+                  items:
+                    $ref: '#/components/schemas/RecipientAddress'
+                bcc:
+                  type: array
+                  maxItems: 20
+                  items:
+                    $ref: '#/components/schemas/RecipientAddress'
+      responses:
+        '202':
+          $ref: '#/components/responses/Accepted'
+        '400':
+          description: Invalid input, more than 20 recipients in total (`validation_failed`), or a demo mailbox (`demo_mailbox`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ProviderDenied'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '415':
+          $ref: '#/components/responses/UnsupportedRequest'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '502':
+          $ref: '#/components/responses/ProviderError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+
+  /emails/{emailId}:
+    get:
+      tags: [Emails]
+      operationId: getEmail
+      summary: One message with its reply and forward history
+      parameters:
+        - $ref: '#/components/parameters/EmailId'
+      responses:
+        '200':
+          description: The message.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [email]
+                properties:
+                  email:
+                    $ref: '#/components/schemas/EmailDetail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /emails/{emailId}/read:
+    patch:
+      tags: [Emails]
+      operationId: setEmailRead
+      summary: Mark read or unread, here and at the provider
+      parameters:
+        - $ref: '#/components/parameters/EmailId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [isRead]
+              properties:
+                isRead:
+                  type: boolean
+      responses:
+        '200':
+          description: The new state.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [isRead]
+                properties:
+                  isRead:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ProviderDenied'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '415':
+          $ref: '#/components/responses/UnsupportedRequest'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '502':
+          $ref: '#/components/responses/ProviderError'
+
+  /emails/{emailId}/body:
+    get:
+      tags: [Emails]
+      operationId: getEmailBody
+      summary: The message as a sanitized HTML document for the sandboxed reader frame
+      description: |
+        Sender HTML is reduced to a small allowlist. The response carries its own Content-Security-Policy with
+        `script-src 'none'` and a `sandbox` directive, and may only be framed by this site. Remote images load only
+        with `images=true` and only over HTTPS.
+      parameters:
+        - $ref: '#/components/parameters/EmailId'
+        - name: images
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ['true']
+      responses:
+        '200':
+          description: A complete HTML document.
+          headers:
+            Content-Security-Policy:
+              description: The reader's own policy.
+              schema:
+                type: string
+          content:
+            text/html:
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /emails/{emailId}/export:
+    get:
+      tags: [Emails]
+      operationId: exportEmail
+      summary: Download the message as an .eml file
+      description: The saved text by default, or the provider's original MIME with `original=true` (at most 25 MiB).
+      parameters:
+        - $ref: '#/components/parameters/EmailId'
+        - name: original
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ['true']
+      responses:
+        '200':
+          description: An attachment download.
+          content:
+            message/rfc822:
+              schema:
+                type: string
+                contentMediaType: message/rfc822
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '502':
+          $ref: '#/components/responses/ProviderError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+
+  /emails/{emailId}/attachments:
+    get:
+      tags: [Emails]
+      operationId: listAttachments
+      summary: The attachments of a message, asked from the provider
+      parameters:
+        - $ref: '#/components/parameters/EmailId'
+      responses:
+        '200':
+          description: Possibly empty.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [attachments]
+                properties:
+                  attachments:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Attachment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '502':
+          $ref: '#/components/responses/ProviderError'
+
+  /emails/{emailId}/attachments/{attachmentId}:
+    get:
+      tags: [Emails]
+      operationId: downloadAttachment
+      summary: Download one attachment (at most 25 MiB)
+      description: Always served as `application/octet-stream` with `X-Content-Type-Options nosniff`, so it never renders inline.
+      parameters:
+        - $ref: '#/components/parameters/EmailId'
+        - name: attachmentId
+          in: path
+          required: true
+          description: The provider's attachment ID, as listed.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 2048
+            pattern: '^[^\r\n\x00]+$'
+      responses:
+        '200':
+          description: The file.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                contentMediaType: application/octet-stream
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '502':
+          $ref: '#/components/responses/ProviderError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+
+  /emails/{emailId}/send:
+    post:
+      tags: [Emails]
+      operationId: replyOrForward
+      summary: Reply to the sender or forward the message
+      description: |
+        A reply goes to the original sender (or its Reply-To) and needs a comment; no recipients may be given.
+        A forward needs 1 to 20 recipients. `requestId` works as in `composeEmail`.
+      parameters:
+        - $ref: '#/components/parameters/EmailId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  additionalProperties: false
+                  required: [action, requestId, comment]
+                  properties:
+                    action:
+                      type: string
+                      const: reply
+                    requestId:
+                      $ref: '#/components/schemas/Uuid'
+                    comment:
+                      type: string
+                      minLength: 1
+                      maxLength: 20000
+                      pattern: '\S'
+                    recipients:
+                      type: array
+                      maxItems: 0
+                - type: object
+                  additionalProperties: false
+                  required: [action, requestId, comment, recipients]
+                  properties:
+                    action:
+                      type: string
+                      const: forward
+                    requestId:
+                      $ref: '#/components/schemas/Uuid'
+                    comment:
+                      type: string
+                      maxLength: 20000
+                    recipients:
+                      type: array
+                      minItems: 1
+                      maxItems: 20
+                      items:
+                        $ref: '#/components/schemas/RecipientAddress'
+      responses:
+        '202':
+          $ref: '#/components/responses/Accepted'
+        '400':
+          description: Invalid input (`validation_failed`) or a demo mailbox (`demo_mailbox`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ProviderDenied'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '415':
+          $ref: '#/components/responses/UnsupportedRequest'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '502':
+          $ref: '#/components/responses/ProviderError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+
+  /health:
+    get:
+      tags: [Operations]
+      operationId: getHealth
+      summary: Liveness and database check
+      security: []
+      responses:
+        '200':
+          description: The app is running and the database answers.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    const: ok
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: session
+      description: Server-side session. HttpOnly, SameSite=Lax, Secure in production; ends after 8 idle hours and at most 7 days after sign-in.
+
+  headers:
+    SessionCookie:
+      description: The session cookie.
+      schema:
+        type: string
+    Location:
+      description: Where the browser is sent.
+      schema:
+        type: string
+    RetryAfter:
+      description: Seconds until the limit resets.
+      schema:
+        type: integer
+
+  parameters:
+    Provider:
+      name: provider
+      in: path
+      required: true
+      schema:
+        type: string
+        enum: [outlook, gmail]
+    AccountId:
+      name: accountId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Uuid'
+    EmailId:
+      name: emailId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Uuid'
+
+  responses:
+    Accepted:
+      description: The provider accepted the message (or this request ID was already accepted).
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [accepted]
+            properties:
+              accepted:
+                type: boolean
+                const: true
+    BadRequest:
+      description: The input does not match this contract (`validation_failed`) or is not valid JSON (`invalid_json`).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthenticated:
+      description: No valid session (`unauthenticated`).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    InvalidCredentials:
+      description: Wrong email or password (`invalid_credentials`). The same for unknown addresses.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ProviderDenied:
+      description: The mail provider refused (`provider_denied`), or the account must be connected again (`reconnect_required`).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Does not exist or belongs to someone else (`not_found`).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: A send request ID reused for different content, or a sync already running (`conflict`).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    TooLarge:
+      description: The body or the download is over the limit (`body_too_large`).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    UnsupportedRequest:
+      description: Not a same-site `application/json` request (`unsupported_request`).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    RateLimited:
+      description: Too many attempts (`rate_limited`), by this app or by the mail provider.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ProviderError:
+      description: |
+        The provider failed, or the outcome of a send is uncertain (`provider_error`; check the Sent folder before
+        resending), or the stored sign-in stopped working (`reconnect_required`).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unavailable:
+      description: The provider is not configured on this server, or the mailbox is a demo (`unavailable`).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    InternalError:
+      description: Something unexpected (`internal_error`). Details are only in the server log, under the X-Request-ID.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    Error:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message]
+          properties:
+            code:
+              $ref: '#/components/schemas/ErrorCode'
+            message:
+              type: string
+              description: For people. May change; do not match on it.
+            details:
+              type: array
+              description: Which fields failed validation.
+              items:
+                type: object
+                additionalProperties: false
+                required: [path, message]
+                properties:
+                  path:
+                    type: string
+                    examples: [to.0]
+                  message:
+                    type: string
+
+    ErrorCode:
+      type: string
+      description: Kept in step with src/http/errors.ts.
+      enum:
+        - validation_failed
+        - invalid_json
+        - invalid_reset_token
+        - wrong_password
+        - demo_mailbox
+        - unauthenticated
+        - invalid_credentials
+        - registration_disabled
+        - provider_denied
+        - not_found
+        - email_taken
+        - conflict
+        - sync_expired
+        - body_too_large
+        - unsupported_request
+        - rate_limited
+        - internal_error
+        - provider_error
+        - reconnect_required
+        - unavailable
+
+    Uuid:
+      type: string
+      format: uuid
+      pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+
+    EmailAddress:
+      type: string
+      description: Compared without regard to case; surrounding spaces are removed.
+      minLength: 3
+      maxLength: 254
+      pattern: '^\s*[^\s@]+@[^\s@]+\.[^\s@]+\s*$'
+
+    RecipientAddress:
+      type: string
+      maxLength: 254
+      pattern: '^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$'
+
+    NewPassword:
+      type: string
+      minLength: 12
+      maxLength: 1024
+
+    DisplayName:
+      type: string
+      description: Up to 80 characters after trimming, without control characters.
+      maxLength: 200
+      pattern: '^[^\x00-\x1f\x7f]*$'
+
+    User:
+      type: object
+      additionalProperties: false
+      required: [userId, email, displayName, isActive, createdAt, updatedAt, avatarUrl]
+      properties:
+        userId:
+          $ref: '#/components/schemas/Uuid'
+        email:
+          type: string
+        displayName:
+          type: string
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        avatarUrl:
+          oneOf:
+            - type: string
+            - type: 'null'
+
+    UserEnvelope:
+      type: object
+      additionalProperties: false
+      required: [user]
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+
+    AuditEntry:
+      type: object
+      additionalProperties: false
+      required: [id, occurredAt, event, outcome, ip, userAgent, detail]
+      properties:
+        id:
+          type: string
+        occurredAt:
+          type: string
+          format: date-time
+        event:
+          type: string
+          enum:
+            - sign-in
+            - sign-out
+            - register
+            - password-change
+            - password-reset-request
+            - password-reset
+            - account-connect
+            - account-remove
+            - mail-send
+            - mail-export
+            - attachment-download
+            - request-refused
+        outcome:
+          type: string
+          enum: [success, failure, denied]
+        ip:
+          oneOf:
+            - type: string
+            - type: 'null'
+        userAgent:
+          type: string
+        detail:
+          type: object
+          additionalProperties:
+            oneOf:
+              - type: string
+              - type: number
+              - type: boolean
+
+    Account:
+      type: object
+      additionalProperties: false
+      required: [id, provider, email, displayName, color, isDemo, needsReconnect, lastError, syncedAt, total, unread]
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        provider:
+          type: string
+          enum: [outlook, gmail]
+        email:
+          type: string
+        displayName:
+          type: string
+        color:
+          type: string
+          enum: [blue, teal, purple, orange, green, pink, red, gray]
+        isDemo:
+          type: boolean
+        needsReconnect:
+          type: boolean
+        lastError:
+          oneOf:
+            - type: string
+            - type: 'null'
+        syncedAt:
+          oneOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+        total:
+          type: integer
+          minimum: 0
+        unread:
+          type: integer
+          minimum: 0
+
+    EmailSummary:
+      type: object
+      additionalProperties: false
+      required: [id, accountId, subject, senderName, senderAddress, preview, receivedAt, hasAttachments, isRead]
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        accountId:
+          $ref: '#/components/schemas/Uuid'
+        subject:
+          type: string
+        senderName:
+          type: string
+        senderAddress:
+          type: string
+        preview:
+          type: string
+        receivedAt:
+          oneOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+        hasAttachments:
+          type: boolean
+        isRead:
+          type: boolean
+
+    EmailDetail:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - accountId
+        - subject
+        - senderName
+        - senderAddress
+        - preview
+        - body
+        - receivedAt
+        - hasAttachments
+        - isRead
+        - accountEmail
+        - provider
+        - accountColor
+        - isDemo
+        - conversation
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        accountId:
+          $ref: '#/components/schemas/Uuid'
+        subject:
+          type: string
+        senderName:
+          type: string
+        senderAddress:
+          type: string
+        preview:
+          type: string
+        body:
+          type: string
+          description: The saved plain text.
+        receivedAt:
+          oneOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+        hasAttachments:
+          type: boolean
+        isRead:
+          type: boolean
+        accountEmail:
+          type: string
+        provider:
+          type: string
+          enum: [outlook, gmail]
+        accountColor:
+          type: string
+        isDemo:
+          type: boolean
+        conversation:
+          type: array
+          description: Replies and forwards sent from Mailbridge, newest first.
+          items:
+            type: object
+            additionalProperties: false
+            required: [action, payload, state, createdAt]
+            properties:
+              action:
+                type: string
+                enum: [reply, forward]
+              payload:
+                type: object
+                additionalProperties: false
+                properties:
+                  comment:
+                    type: string
+                  recipients:
+                    type: array
+                    items:
+                      type: string
+              state:
+                type: string
+                enum: [pending, accepted, failed, unknown]
+              createdAt:
+                type: string
+                format: date-time
+
+    Attachment:
+      type: object
+      additionalProperties: false
+      required: [id, name, size, contentType]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        size:
+          type: integer
+          minimum: 0
+        contentType:
+          type: string
+        cloudLink:
+          type: boolean
+          description: A link to a cloud file rather than an attached file; open it in the provider.

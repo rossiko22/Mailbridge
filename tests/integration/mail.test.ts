@@ -116,7 +116,7 @@ test('a message opens in a sandboxed frame, exports as .eml and can be marked re
 
     const eml = await client.get(`/emails/${target.id}/export`);
     assert.match(eml.headers.get('content-type') ?? '', /message\/rfc822/);
-    assert.match(eml.headers.get('content-disposition') ?? '', /^attachment; filename="mail-.*-text\.eml"$/);
+    assert.match(eml.headers.get('content-disposition') ?? '', /^attachment; filename="?mail-[0-9a-f-]+-text\.eml"?$/);
     assert.match(await eml.text(), /^From: .*<priya\.nair@contoso\.example>/);
 
     assert.deepEqual(await (await client.patch(`/emails/${target.id}/read`, { isRead: true })).json(), { isRead: true });

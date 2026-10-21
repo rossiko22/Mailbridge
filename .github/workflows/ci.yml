@@ -15,6 +15,12 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# An explicit bash shell runs with pipefail, so `npm run test:coverage | tee` fails when the tests fail.
+# The implicit default (bash -e) takes the exit status of tee alone.
+defaults:
+  run:
+    shell: bash
+
 # Every action is pinned to a full commit SHA and every image to a digest, so a moved tag cannot change what runs here.
 # Dependabot keeps the pins up to date; the comment after each SHA says which release it is.
 env:

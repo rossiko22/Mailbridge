@@ -18,7 +18,9 @@ services:
     region: frankfurt
     # The free plan has no pre-deploy step, so migrations run on every start.
     # npm is not in the runtime image; the same two steps as "npm run start:render".
-    dockerCommand: sh -c "node dist/scripts/migrate.js && node dist/server.js"
+    # Render passes everything after -c to the shell as one string, so no quotes around it
+    # (quotes would make the whole line a single command name: "not found", exit 127).
+    dockerCommand: /bin/sh -c node dist/scripts/migrate.js && node dist/server.js
     healthCheckPath: /health
     # Deploy a push to main only after every GitHub check on that commit is green.
     autoDeployTrigger: checksPass

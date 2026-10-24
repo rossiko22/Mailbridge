@@ -20,6 +20,8 @@ services:
     # npm is not in the runtime image; the same two steps as "npm run start:render".
     dockerCommand: sh -c "node dist/scripts/migrate.js && node dist/server.js"
     healthCheckPath: /health
+    # Deploy a push to main only after every GitHub check on that commit is green.
+    autoDeployTrigger: checksPass
     envVars:
       - key: NODE_ENV
         value: production

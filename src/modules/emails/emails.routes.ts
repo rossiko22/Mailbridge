@@ -58,6 +58,7 @@ export function createEmailRouter({ service, requireAuth, audit = noAudit }: Ema
                 sort: query.sort,
                 search: query.search,
                 accountId: query.account ?? null,
+                folder: query.folder,
                 unreadOnly: query.unread === 'true',
             }),
         );

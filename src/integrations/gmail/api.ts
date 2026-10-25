@@ -8,7 +8,9 @@ import {
     decodeMimeWords,
     htmlToText,
     parseAddress,
+    parseAddressList,
     quoteText,
+    recipientLabel,
 } from '../mail/mime.js';
 import {
     DOWNLOAD_LIMIT,
@@ -16,6 +18,7 @@ import {
     type MailAttachment,
     type MailBody,
     type MailClient,
+    type MailFolder,
     type NewMessage,
     type SyncedMessage,
     type SyncPage,
@@ -153,20 +156,33 @@ function attachmentsOf(payload: Part | undefined): MailAttachment[] {
     return result;
 }
 
+// Labels can overlap (mail sent to yourself is in INBOX and SENT); each message is shown in one folder.
+// Trash wins over everything, then spam, then the inbox. Archived mail and drafts are not shown.
+export function folderOf(labels: string[]): MailFolder | null {
+    if (labels.includes('TRASH')) return null;
+    if (labels.includes('SPAM')) return 'junk';
+    if (labels.includes('INBOX')) return 'inbox';
+    if (labels.includes('SENT')) return 'sent';
+    return null;
+}
+
 export function toSyncedMessage(message: GmailMessage): SyncedMessage {
-    // Archived, trashed or spam mail leaves the inbox view.
-    if (!message.labelIds?.includes('INBOX')) return { id: message.id, removed: true, fields: {} };
+    const labels = message.labelIds ?? [];
+    const folder = folderOf(labels);
+    if (!folder) return { id: message.id, removed: true, fields: {} };
     const payload = message.payload;
     return {
         id: message.id,
+        folder,
         fields: {
             subject: decodeMimeWords(headerOf(payload, 'Subject') ?? ''),
             sender: parseAddress(headerOf(payload, 'From')),
+            recipients: recipientLabel(parseAddressList(headerOf(payload, 'To'))),
             preview: decodeEntities(message.snippet ?? ''),
             bodyText: plainText(payload).slice(0, 200_000),
             receivedAt: message.internalDate ? new Date(Number(message.internalDate)).toISOString() : null,
             hasAttachments: attachmentsOf(payload).length > 0,
-            isRead: !message.labelIds.includes('UNREAD'),
+            isRead: !labels.includes('UNREAD'),
         },
     };
 }
@@ -288,7 +304,9 @@ export function createGmailClient(
             const startHistoryId =
                 cursor.startHistoryId || (await json<{ historyId?: string }>(await call('profile', { cost: COST.profile }))).historyId;
             if (!startHistoryId) throw new GmailError(502, 'Invalid Google profile response.');
-            const query = `labelIds=INBOX&maxResults=50&q=${encodeURIComponent(`newer_than:${INITIAL_SYNC_DAYS}d`)}${cursor.pageToken ? `&pageToken=${encodeURIComponent(cursor.pageToken)}` : ''}`;
+            // Spam is only listed with includeSpamTrash; trashed mail that matches is dropped by toSyncedMessage.
+            const search = `newer_than:${INITIAL_SYNC_DAYS}d {in:inbox in:sent in:spam}`;
+            const query = `maxResults=50&includeSpamTrash=true&q=${encodeURIComponent(search)}${cursor.pageToken ? `&pageToken=${encodeURIComponent(cursor.pageToken)}` : ''}`;
             const list = await json<{ messages?: Array<{ id: string }>; nextPageToken?: string }>(
                 await call(`messages?${query}`, { cost: COST.list }),
             );

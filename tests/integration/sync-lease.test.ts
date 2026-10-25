@@ -20,7 +20,7 @@ async function account() {
     return (await accounts.upsertConnected(user.userId, 'gmail', 'sync@gmail.example', 'Sync', '{}')).id;
 }
 const page = (id: string, cursor: string): SyncPage => ({
-    messages: [{ id, fields: { subject: id, receivedAt: new Date().toISOString() } }],
+    messages: [{ id, folder: 'inbox', fields: { subject: id, receivedAt: new Date().toISOString() } }],
     cursor,
     hasMore: false,
 });

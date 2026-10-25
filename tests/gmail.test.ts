@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createGmailClient, createQuotaBudget, toSyncedMessage } from '../src/integrations/gmail/api.js';
+import { createGmailClient, createQuotaBudget, folderOf, toSyncedMessage } from '../src/integrations/gmail/api.js';
 import { MailError } from '../src/integrations/mail/errors.js';
 
 const b64 = (text: string) => Buffer.from(text).toString('base64url');
@@ -14,6 +14,7 @@ const message = (id: string, labels = ['INBOX', 'UNREAD']) => ({
         headers: [
             { name: 'Subject', value: 'Hi' },
             { name: 'From', value: 'Ann <ann@example.com>' },
+            { name: 'To', value: '"Doe, Bob" <bob@example.com>, carol@example.com' },
         ],
         parts: [
             { mimeType: 'text/plain', body: { data: b64('Plain body') } },
@@ -30,9 +31,23 @@ test('messages map to saved fields', () => {
     assert.equal(synced.fields.isRead, false);
     assert.equal(synced.fields.hasAttachments, true);
     assert.equal(synced.fields.preview, 'Hello & welcome');
+    assert.equal(synced.fields.recipients, 'Doe, Bob, carol@example.com');
+    assert.equal(synced.folder, 'inbox');
 });
-test('mail that left the inbox is reported as removed', () => {
-    assert.equal(toSyncedMessage(message('m1', ['TRASH'])).removed, true);
+test('labels decide the folder: trash hides, then spam, inbox and sent', () => {
+    assert.equal(folderOf(['SENT']), 'sent');
+    assert.equal(folderOf(['SPAM', 'UNREAD']), 'junk');
+    assert.equal(folderOf(['INBOX', 'SENT']), 'inbox', 'mail to yourself is shown once, in the inbox');
+    assert.equal(folderOf(['SPAM', 'INBOX']), 'junk');
+    assert.equal(folderOf(['TRASH', 'SENT']), null);
+    assert.equal(folderOf(['CATEGORY_PERSONAL']), null, 'archived mail');
+    assert.equal(folderOf(['DRAFT']), null);
+    assert.equal(toSyncedMessage(message('m1', ['SPAM'])).folder, 'junk');
+});
+test('mail that left every shown folder is reported as removed from all of them', () => {
+    const removed = toSyncedMessage(message('m1', ['TRASH']));
+    assert.equal(removed.removed, true);
+    assert.equal(removed.folder, undefined);
 });
 test('first sync lists the inbox and then switches to history', async () => {
     const urls: string[] = [];
@@ -44,6 +59,10 @@ test('first sync lists the inbox and then switches to history', async () => {
         return reply(message('m1'));
     }) as typeof fetch);
     const page = await client.sync(null);
+    const list = new URL(urls.find(url => url.includes('/messages?'))!);
+    assert.equal(list.searchParams.get('q'), 'newer_than:90d {in:inbox in:sent in:spam}');
+    assert.equal(list.searchParams.get('includeSpamTrash'), 'true', 'spam is only listed when asked for');
+    assert.equal(list.searchParams.get('labelIds'), null);
     assert.equal(page.messages.length, 1);
     assert.equal(page.hasMore, false);
     assert.deepEqual(JSON.parse(page.cursor), { mode: 'delta', historyId: '100' });

@@ -4,18 +4,27 @@ export const providerIds: readonly ProviderId[] = ['outlook', 'gmail'];
 // First sync only fetches recent mail so a large mailbox appears quickly.
 export const INITIAL_SYNC_DAYS = 90;
 
+// The folders the app shows. Gmail: the INBOX, SENT and SPAM labels; Outlook: Inbox, Sent Items and Junk Email.
+export type MailFolder = 'inbox' | 'sent' | 'junk';
+export const mailFolders: readonly MailFolder[] = ['inbox', 'sent', 'junk'];
+
 // Providers send partial updates. Only keys present in `fields` overwrite stored values.
 export interface SyncedFields {
     subject: string;
     sender: { name: string; address: string };
+    // The To line as people read it ("Ann, bob@example.com"), shown in place of the sender for sent mail.
+    recipients: string;
     preview: string;
     bodyText: string;
     receivedAt: string | null;
     hasAttachments: boolean;
     isRead: boolean;
 }
+// `folder` is where the message is now. For a removal it is the folder the message left, so a move between two
+// folders synced separately never deletes the copy in the new one; without it the message left every folder shown.
 export interface SyncedMessage {
     id: string;
+    folder?: MailFolder;
     removed?: boolean;
     fields: Partial<SyncedFields>;
 }

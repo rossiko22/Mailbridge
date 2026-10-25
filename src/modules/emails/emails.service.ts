@@ -129,6 +129,9 @@ export function createEmailService(repository: EmailRepository, accounts: Accoun
     ) {
         const email = await emailOf(userId, id);
         if (email.isDemo) throw demoSend();
+        // A reply goes to the sender, and the sender of sent mail is the person themselves.
+        if (action === 'reply' && email.folder === 'sent')
+            throw new MailError(400, 'A sent message cannot be replied to. Forward it instead.', false, 'validation_failed');
         const client = clientFor(email);
         if (!(await repository.reserveSend(requestId, email.accountId, email.id, action, { comment, recipients })))
             return { accepted: true };

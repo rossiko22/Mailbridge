@@ -163,6 +163,43 @@ export const mutations: Mutation[] = [
         replace: 'if (query.cursor && !after)',
         tests: [INTEGRATION('mail')],
     },
+    // Mail folders
+    {
+        name: 'the mail list ignores the folder',
+        file: 'src/modules/emails/emails.repository.ts',
+        find: 'WHERE e.account_id = a.account_id AND e.folder = $8',
+        replace: 'WHERE e.account_id = a.account_id AND $8::text IS NOT NULL',
+        tests: [INTEGRATION('mail')],
+    },
+    {
+        name: 'a removal from one folder deletes the copy that moved to another',
+        file: 'src/modules/emails/emails.repository.ts',
+        find: 'AND ($3::text IS NULL OR folder=$3)',
+        replace: 'AND ($3::text IS NULL OR TRUE)',
+        tests: [INTEGRATION('mail')],
+    },
+    {
+        name: 'an Outlook checkpoint may read another folder',
+        file: 'src/integrations/outlook/graph.ts',
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: this is the source text to find, not a template.
+        find: '/mailFolders/${GRAPH_FOLDERS[folder]}/messages/delta$`',
+        replace: '/mailFolders/(?:inbox|sentitems|junkemail|drafts)/messages/delta$`',
+        tests: [UNIT('outlook')],
+    },
+    {
+        name: 'trashed Gmail mail stays visible in Sent',
+        file: 'src/integrations/gmail/api.ts',
+        find: "    if (labels.includes('TRASH')) return null;\n",
+        replace: '',
+        tests: [UNIT('gmail'), INTEGRATION('mail')],
+    },
+    {
+        name: 'a sent message can be replied to (to oneself)',
+        file: 'src/modules/emails/emails.service.ts',
+        find: "if (action === 'reply' && email.folder === 'sent')",
+        replace: 'if (false)',
+        tests: [INTEGRATION('mail')],
+    },
     // Configuration and transport
     {
         name: 'production accepts short secrets',

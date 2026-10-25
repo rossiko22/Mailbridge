@@ -20,6 +20,7 @@
     providers: {},
     filter: 'all',
     accountId: null,
+    folder: 'inbox',
     search: '',
     sort: 'newest',
     selectedId: null,
@@ -34,6 +35,13 @@
     current: null,
   };
   const account = id => state.accounts.find(item => item.id === id);
+  // The folders every provider has. Gmail: the INBOX, SENT and SPAM labels; Outlook: Inbox, Sent Items and Junk Email.
+  const folders = [
+    { id: 'inbox', label: 'Inbox', icon: 'inbox' },
+    { id: 'sent', label: 'Sent items', icon: 'send' },
+    { id: 'junk', label: 'Junk email', icon: 'alert' },
+  ];
+  const folderLabel = id => folders.find(item => item.id === id)?.label ?? 'Inbox';
   const el = (tag, className, text) => {
     const node = document.createElement(tag);
     if (className) node.className = className;
@@ -61,6 +69,21 @@
     compose.type = 'button';
     compose.innerHTML = `${icon('edit')}New mail`;
     compose.addEventListener('click', openCompose);
+
+    const folderHeading = el('div', 'sidebar__heading');
+    folderHeading.append(el('span', '', 'Folders'));
+    const folderBox = el('div', '');
+    for (const folder of folders) {
+      const button = el('button', 'nav-item');
+      button.type = 'button';
+      button.dataset.folder = folder.id;
+      button.innerHTML = icon(folder.icon);
+      const text = el('span', 'nav-item__text');
+      text.append(el('span', '', folder.label));
+      button.append(text);
+      button.addEventListener('click', () => selectFolder(folder.id));
+      folderBox.append(button);
+    }
 
     const all = el('button', 'nav-item');
     all.type = 'button';
@@ -90,7 +113,7 @@
     status.id = 'sync-status';
     status.setAttribute('role', 'status');
     foot.append(status);
-    sidebar.append(compose, all, heading, accountsBox, foot);
+    sidebar.append(compose, folderHeading, folderBox, heading, all, accountsBox, foot);
   }
 
   function renderAddMenu() {
@@ -122,6 +145,10 @@
     total.hidden = unread === 0;
     sidebar.querySelector('[data-nav="all"]').toggleAttribute('aria-current', false);
     if (state.accountId === null) sidebar.querySelector('[data-nav="all"]').setAttribute('aria-current', 'page');
+    for (const button of sidebar.querySelectorAll('[data-folder]')) {
+      if (button.dataset.folder === state.folder) button.setAttribute('aria-current', 'page');
+      else button.removeAttribute('aria-current');
+    }
     const box = $('#account-list');
     box.replaceChildren();
     for (const item of state.accounts) {
@@ -156,8 +183,11 @@
 
   function renderTitle() {
     const selected = account(state.accountId);
-    title.textContent = state.search ? `Results for “${state.search}”` : selected ? selected.email : 'All mail';
-    document.title = `${selected && !state.search ? selected.email : 'Mail'} · ${window.App.APP_NAME}`;
+    const scope = selected ? selected.email : 'All mail';
+    const name = state.folder === 'inbox' ? scope : selected ? `${folderLabel(state.folder)} · ${scope}` : folderLabel(state.folder);
+    title.textContent = state.search ? `Results for “${state.search}”` : name;
+    const plain = state.search || (!selected && state.folder === 'inbox');
+    document.title = `${plain ? 'Mail' : name} · ${window.App.APP_NAME}`;
   }
 
   function renderSyncStatus() {
@@ -185,11 +215,25 @@
     renderBanner();
   }
 
+  // The address keeps the chosen account and folder, so a reload opens the same view.
+  function viewQuery() {
+    const query = new URLSearchParams();
+    if (state.accountId) query.set('account', state.accountId);
+    if (state.folder !== 'inbox') query.set('folder', state.folder);
+    const text = query.toString();
+    return text ? `?${text}` : '';
+  }
+
+  function selectFolder(id) {
+    state.folder = id;
+    selectAccount(state.accountId);
+  }
+
   function selectAccount(id) {
     state.accountId = id;
     state.selectedId = null;
     const url = new URL(location.href);
-    url.search = id ? `?account=${id}` : '';
+    url.search = viewQuery();
     history.replaceState(null, '', url);
     renderAccounts();
     renderBanner();
@@ -220,7 +264,13 @@
     button.type = 'button';
     button.dataset.id = email.id;
     if (email.id === state.selectedId) button.setAttribute('aria-current', 'true');
-    const sender = email.senderName || email.senderAddress || 'Unknown sender';
+    // Sent mail is listed by who it went to; everything else by who sent it.
+    const sender =
+      email.folder === 'sent'
+        ? email.recipients
+          ? `To: ${email.recipients}`
+          : 'No recipients'
+        : email.senderName || email.senderAddress || 'Unknown sender';
     const body = el('span', 'msg__body');
     const top = el('span', 'msg__top');
     if (state.accountId === null && state.accounts.length > 1) {
@@ -240,7 +290,8 @@
       meta.innerHTML = icon('paperclip', 'icon--sm');
       meta.title = 'Has attachments';
     }
-    button.append(avatar({ name: sender, key: email.senderAddress || sender }), body, meta);
+    const person = email.folder === 'sent' ? email.recipients || '?' : sender;
+    button.append(avatar({ name: person, key: email.folder === 'sent' ? person : email.senderAddress || sender }), body, meta);
     button.addEventListener('click', () => openMessage(email.id));
     item.append(button);
     return item;
@@ -277,6 +328,10 @@
       empty.querySelector('p').textContent = `Nothing matches “${state.search}”. Try different words.`;
     } else if (state.filter === 'unread') {
       empty.innerHTML = `${icon('check-circle')}<h2>You’re all caught up</h2><p>There are no unread messages here.</p>`;
+    } else if (state.folder === 'sent') {
+      empty.innerHTML = `${icon('send')}<h2>Nothing sent yet</h2><p>Mail you send from the last 90 days appears here.</p>`;
+    } else if (state.folder === 'junk') {
+      empty.innerHTML = `${icon('check-circle')}<h2>No junk email</h2><p>Mail your provider marks as spam appears here.</p>`;
     } else {
       empty.innerHTML = `${icon('inbox')}<h2>Nothing here yet</h2><p>${state.syncing ? 'Syncing your mail…' : 'New messages will appear here.'}</p>`;
     }
@@ -290,6 +345,7 @@
       if (!list.children.length) renderListState(true);
     }
     const query = new URLSearchParams({ sort: state.sort });
+    if (state.folder !== 'inbox') query.set('folder', state.folder);
     if (!reset && state.cursor) query.set('cursor', state.cursor);
     if (state.accountId) query.set('account', state.accountId);
     if (state.filter === 'unread') query.set('unread', 'true');
@@ -407,10 +463,32 @@
     const to = el('span', 'row');
     const dot = el('span', 'dot');
     dot.dataset.color = email.accountColor;
-    to.append(el('span', '', 'To:'), dot, el('span', '', `${email.accountEmail} · ${providerName(email.provider)}`));
-    who.append(to);
+    if (email.folder === 'sent') {
+      to.append(el('span', '', `To: ${email.recipients || 'no recipients'}`));
+      const via = el('span', 'row');
+      via.append(el('span', '', 'From:'), dot, el('span', '', `${email.accountEmail} · ${providerName(email.provider)}`));
+      who.append(to, via);
+    } else {
+      to.append(el('span', '', 'To:'), dot, el('span', '', `${email.accountEmail} · ${providerName(email.provider)}`));
+      who.append(to);
+    }
     from.append(avatar({ name: sender, key: email.senderAddress || sender, size: 'lg' }), who, el('time', '', longDate(email.receivedAt)));
     inner.append(from);
+
+    // Junk is where phishing ends up. The frame never runs scripts and images stay hidden unless asked for,
+    // but a link or an attachment can still lead somewhere harmful.
+    if (email.folder === 'junk') {
+      const warning = el('div', 'banner banner--warning');
+      warning.innerHTML = icon('alert');
+      warning.append(
+        el(
+          'div',
+          'banner__text',
+          `${providerName(email.provider)} marked this message as junk. Be careful with its links and attachments, and never enter a password from it.`,
+        ),
+      );
+      inner.append(warning);
+    }
 
     // The message itself: sandboxed document from the server, with a plain-text fallback.
     const notice = el('div', 'reader-notice');
@@ -541,6 +619,12 @@
       const button = toolbar.querySelector(`[data-act="${act}"]`);
       button.disabled = !canSend;
       button.title = canSend ? '' : email.isDemo ? 'Demo mailboxes cannot send mail.' : 'Reconnect this account to send.';
+    }
+    // A reply would go to the sender, which for sent mail is the person themselves.
+    if (email.folder === 'sent') {
+      const replyButton = toolbar.querySelector('[data-act="reply"]');
+      replyButton.disabled = true;
+      replyButton.title = 'Sent messages can be forwarded, not replied to.';
     }
     toolbar.querySelector('[data-act="eml-original"]').disabled = email.isDemo;
 
@@ -874,13 +958,15 @@
     clearReader();
     const params = new URLSearchParams(location.search);
     state.accountId = params.get('account');
+    // Only the known folder names are used; anything else in the address opens the inbox.
+    state.folder = folders.some(item => item.id === params.get('folder')) ? params.get('folder') : 'inbox';
     const connect = params.get('connect');
     // Only fixed texts are shown for a result named in the address; the reason for a failure comes from the server.
     const known = connectMessages[connect];
     if (known) toast(known[0], known[1]);
     if (params.has('connect') || params.has('message')) {
       const url = new URL(location.href);
-      url.search = state.accountId ? `?account=${state.accountId}` : '';
+      url.search = viewQuery();
       history.replaceState(null, '', url);
     }
     try {

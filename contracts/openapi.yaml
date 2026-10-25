@@ -648,7 +648,7 @@ paths:
     get:
       tags: [Emails]
       operationId: listEmails
-      summary: The combined inbox, one page at a time
+      summary: One folder of every mailbox (the combined inbox by default), one page at a time
       parameters:
         - name: cursor
           in: query
@@ -677,6 +677,14 @@ paths:
           description: Only this account. Omit for every account.
           schema:
             $ref: '#/components/schemas/Uuid'
+        - name: folder
+          in: query
+          required: false
+          description: |
+            Inbox, Sent or Junk. Gmail: the INBOX, SENT and SPAM labels; Outlook: Inbox, Sent Items and Junk Email.
+            A Gmail message with several of these labels is shown once: spam first, then the inbox, then sent.
+          schema:
+            $ref: '#/components/schemas/Folder'
         - name: unread
           in: query
           required: false
@@ -1001,6 +1009,7 @@ paths:
       summary: Reply to the sender or forward the message
       description: |
         A reply goes to the original sender (or its Reply-To) and needs a comment; no recipients may be given.
+        A message in the Sent folder can only be forwarded: a reply to it answers 400 `validation_failed`.
         A forward needs 1 to 20 recipients. `requestId` works as in `composeEmail`.
       parameters:
         - $ref: '#/components/parameters/EmailId'
@@ -1419,25 +1428,41 @@ components:
         total:
           type: integer
           minimum: 0
+          description: Messages in the inbox. Sent and junk mail are not counted.
         unread:
           type: integer
           minimum: 0
+          description: Unread messages in the inbox.
+
+    Folder:
+      type: string
+      enum: [inbox, sent, junk]
+      default: inbox
+
+    Recipients:
+      type: string
+      maxLength: 500
+      description: The To line as people read it ("Ann, bob@example.com"); shown in place of the sender for sent mail.
 
     EmailSummary:
       type: object
       additionalProperties: false
-      required: [id, accountId, subject, senderName, senderAddress, preview, receivedAt, hasAttachments, isRead]
+      required: [id, accountId, folder, subject, senderName, senderAddress, recipients, preview, receivedAt, hasAttachments, isRead]
       properties:
         id:
           $ref: '#/components/schemas/Uuid'
         accountId:
           $ref: '#/components/schemas/Uuid'
+        folder:
+          $ref: '#/components/schemas/Folder'
         subject:
           type: string
         senderName:
           type: string
         senderAddress:
           type: string
+        recipients:
+          $ref: '#/components/schemas/Recipients'
         preview:
           type: string
         receivedAt:
@@ -1456,9 +1481,11 @@ components:
       required:
         - id
         - accountId
+        - folder
         - subject
         - senderName
         - senderAddress
+        - recipients
         - preview
         - body
         - receivedAt
@@ -1474,12 +1501,16 @@ components:
           $ref: '#/components/schemas/Uuid'
         accountId:
           $ref: '#/components/schemas/Uuid'
+        folder:
+          $ref: '#/components/schemas/Folder'
         subject:
           type: string
         senderName:
           type: string
         senderAddress:
           type: string
+        recipients:
+          $ref: '#/components/schemas/Recipients'
         preview:
           type: string
         body:

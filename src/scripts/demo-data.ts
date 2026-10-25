@@ -7,6 +7,10 @@ export const DEMO_PASSWORD = 'Demo-Password-123!';
 
 interface DemoMail {
     id: string;
+    // Inbox when omitted.
+    folder?: 'sent' | 'junk';
+    // The To line of sent mail.
+    to?: string;
     hoursAgo: number;
     from: string;
     address: string;
@@ -89,6 +93,29 @@ const outlookMail: DemoMail[] = [
         body: 'We are delighted to have you on the team. Here is what to expect this week:\n\n- Monday: orientation\n- Tuesday: meet your buddy\n- Wednesday: first project kickoff',
         read: true,
     },
+    {
+        id: 'o-sent-1',
+        folder: 'sent',
+        hoursAgo: 8,
+        from: 'Demo User',
+        address: 'demo.work@outlook.example',
+        to: 'Daniel Okafor',
+        subject: 'Contract renewal',
+        preview: 'Hi Daniel, please find the revised terms below.',
+        body: 'Hi Daniel,\n\nPlease find the revised terms below. Let me know if legal has any questions.\n\nBest regards',
+        read: true,
+    },
+    {
+        id: 'o-junk-1',
+        folder: 'junk',
+        hoursAgo: 5,
+        from: 'Account Security',
+        address: 'security@micros0ft-verify.example',
+        subject: 'Your mailbox is almost full — verify now',
+        preview: 'Verify your account to avoid losing messages.',
+        body: 'Verify your account to avoid losing messages. This is a demo of a phishing message in Junk.',
+        read: false,
+    },
 ];
 
 const gmailMail: DemoMail[] = [
@@ -153,6 +180,29 @@ const gmailMail: DemoMail[] = [
         body: 'Two of your borrowed items are due in three days. You can renew them online.',
         read: false,
     },
+    {
+        id: 'g-sent-1',
+        folder: 'sent',
+        hoursAgo: 30,
+        from: 'Demo User',
+        address: 'demo.personal@gmail.example',
+        to: 'Lena Fischer',
+        subject: 'Re: Climbing on Sunday',
+        preview: 'Count me in! I can bring the spare rope.',
+        body: 'Count me in! I can bring the spare rope.\n\nSee you at 9.',
+        read: true,
+    },
+    {
+        id: 'g-junk-1',
+        folder: 'junk',
+        hoursAgo: 12,
+        from: 'Prize Department',
+        address: 'winner@lottery-claims.example',
+        subject: 'You have WON a gift card — claim within 24 hours',
+        preview: 'Confirm your details to receive your reward.',
+        body: 'Confirm your details to receive your reward. This offer expires in 24 hours.',
+        read: false,
+    },
 ];
 
 async function seedAccount(
@@ -174,8 +224,9 @@ async function seedAccount(
     const accountId = rows[0]!.account_id;
     for (const item of mail) {
         await pool.query(
-            `INSERT INTO emails (account_id, provider_id, subject, sender_name, sender_address, preview, body_text, received_at, has_attachments, is_read)
-             VALUES ($1,$2,$3,$4,$5,$6,$7, NOW() - make_interval(hours => $8::int), $9, $10)
+            `INSERT INTO emails (account_id, provider_id, subject, sender_name, sender_address, preview, body_text, received_at, has_attachments, is_read,
+                folder, recipients)
+             VALUES ($1,$2,$3,$4,$5,$6,$7, NOW() - make_interval(hours => $8::int), $9, $10, $11, $12)
              ON CONFLICT (account_id, provider_id) DO NOTHING`,
             [
                 accountId,
@@ -188,6 +239,8 @@ async function seedAccount(
                 item.hoursAgo,
                 item.attachment ?? false,
                 item.read,
+                item.folder ?? 'inbox',
+                item.to ?? '',
             ],
         );
     }

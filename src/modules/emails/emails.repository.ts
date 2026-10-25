@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { MailError } from '../../integrations/mail/errors.js';
 import { withTransaction } from '../../config/database.js';
-import type { MailBody, SyncedMessage, SyncPage } from '../../integrations/mail/types.js';
+import type { MailBody, MailFolder, SyncedMessage, SyncPage } from '../../integrations/mail/types.js';
 import { encodeCursor } from './emails.schemas.js';
 import { defaultFilters, type MailFilters, PAGE_SIZE } from './emails.types.js';
 
@@ -27,18 +27,27 @@ export function searchTerms(search: string): { like: string; words: string | nul
 export function createEmailRepository(pool: Pool) {
     async function save(client: PoolClient, accountId: string, message: SyncedMessage) {
         if (message.removed) {
-            await client.query('DELETE FROM emails WHERE account_id=$1 AND provider_id=$2', [accountId, message.id]);
+            // Scoped to the folder it left, if named: the same message may already be saved in its new folder.
+            await client.query('DELETE FROM emails WHERE account_id=$1 AND provider_id=$2 AND ($3::text IS NULL OR folder=$3)', [
+                accountId,
+                message.id,
+                message.folder ?? null,
+            ]);
             return;
         }
         if (!message.id) throw new Error('Provider message is missing its ID');
+        if (!message.folder) throw new Error('Provider message is missing its folder');
         const fields = message.fields;
         // Providers send partial updates: only the keys present may overwrite stored values.
         const present = Object.fromEntries(Object.keys(fields).map(key => [key, true]));
         await client.query(
             `INSERT INTO emails
-            (account_id, provider_id, subject, sender_name, sender_address, preview, body_text, received_at, has_attachments, is_read)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+            (account_id, provider_id, subject, sender_name, sender_address, preview, body_text, received_at, has_attachments, is_read,
+                folder, recipients)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$12,$13)
             ON CONFLICT (account_id, provider_id) DO UPDATE SET
+            folder=EXCLUDED.folder,
+            recipients=CASE WHEN $11::jsonb ? 'recipients' THEN EXCLUDED.recipients ELSE emails.recipients END,
             subject=CASE WHEN $11::jsonb ? 'subject' THEN EXCLUDED.subject ELSE emails.subject END,
             sender_name=CASE WHEN $11::jsonb ? 'sender' THEN EXCLUDED.sender_name ELSE emails.sender_name END,
             sender_address=CASE WHEN $11::jsonb ? 'sender' THEN EXCLUDED.sender_address ELSE emails.sender_address END,
@@ -59,31 +68,33 @@ export function createEmailRepository(pool: Pool) {
                 fields.hasAttachments ?? false,
                 fields.isRead ?? false,
                 JSON.stringify(present),
+                message.folder,
+                fields.recipients ?? '',
             ],
         );
     }
 
     // Keyset pagination: each page continues after the last row of the previous one, so mail arriving meanwhile
     // never shifts or repeats rows, and a deep page costs the same as the first. Mail without a date counts as the
-    // oldest. Each account contributes its next rows straight from the emails_account_order index (LATERAL), and
-    // only those few are merged, so "All mail" stays fast however much mail is saved.
+    // oldest. Each account contributes its next rows straight from the emails_account_folder_order index (LATERAL), and
+    // only those few are merged, so "All mail" stays fast however much mail is saved. One folder at a time.
     async function list(userId: string, filters: MailFilters = defaultFilters) {
         // Only these fixed SQL fragments vary with the sort; every value is a parameter.
         const order = filters.sort === 'newest' ? 'DESC' : 'ASC';
         const after = filters.sort === 'newest' ? '<' : '>';
         const search = searchTerms(filters.search);
         const result = await pool.query<{ sortKey: string; id: string }>(
-            `SELECT e.id, e."accountId", e.subject, e."senderName", e."senderAddress", e.preview, e."receivedAt",
-                e."hasAttachments", e."isRead",
+            `SELECT e.id, e."accountId", e.folder, e.subject, e."senderName", e."senderAddress", e.recipients, e.preview,
+                e."receivedAt", e."hasAttachments", e."isRead",
                 CASE WHEN e."receivedAt" IS NULL THEN '-infinity'
                     ELSE to_char(e."receivedAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') END AS "sortKey"
             FROM mail_accounts a
             CROSS JOIN LATERAL (
-                SELECT e.email_id AS id, e.account_id AS "accountId", e.subject, e.sender_name AS "senderName",
-                    e.sender_address AS "senderAddress", e.preview, e.received_at AS "receivedAt",
+                SELECT e.email_id AS id, e.account_id AS "accountId", e.folder, e.subject, e.sender_name AS "senderName",
+                    e.sender_address AS "senderAddress", e.recipients, e.preview, e.received_at AS "receivedAt",
                     e.has_attachments AS "hasAttachments", e.is_read AS "isRead", COALESCE(e.received_at, '-infinity') AS position
                 FROM emails e
-                WHERE e.account_id = a.account_id
+                WHERE e.account_id = a.account_id AND e.folder = $8
                 AND (NOT $3::boolean OR NOT e.is_read)
                 AND ($4::text IS NULL
                     OR ($5::text IS NOT NULL AND e.search_vector @@ to_tsquery('simple', $5))
@@ -103,6 +114,7 @@ export function createEmailRepository(pool: Pool) {
                 search?.words ?? null,
                 filters.after?.key ?? null,
                 filters.after?.id ?? null,
+                filters.folder,
             ],
         );
         const rows = result.rows.slice(0, PAGE_SIZE);
@@ -117,8 +129,8 @@ export function createEmailRepository(pool: Pool) {
 
     async function get(userId: string, id: string) {
         const result = await pool.query(
-            `SELECT e.email_id AS id, e.account_id AS "accountId", e.provider_id AS "providerId", e.subject,
-                e.sender_name AS "senderName", e.sender_address AS "senderAddress", e.preview, e.body_text AS body,
+            `SELECT e.email_id AS id, e.account_id AS "accountId", e.provider_id AS "providerId", e.folder, e.subject,
+                e.sender_name AS "senderName", e.sender_address AS "senderAddress", e.recipients, e.preview, e.body_text AS body,
                 e.received_at AS "receivedAt", e.has_attachments AS "hasAttachments", e.is_read AS "isRead",
                 a.email AS "accountEmail", a.provider, a.color AS "accountColor", a.is_demo AS "isDemo"
             FROM emails e JOIN mail_accounts a ON a.account_id = e.account_id WHERE e.email_id = $1 AND a.user_id = $2`,
@@ -130,9 +142,11 @@ export function createEmailRepository(pool: Pool) {
                   id: string;
                   accountId: string;
                   providerId: string;
+                  folder: MailFolder;
                   subject: string;
                   senderName: string;
                   senderAddress: string;
+                  recipients: string;
                   preview: string;
                   body: string;
                   receivedAt: Date | null;

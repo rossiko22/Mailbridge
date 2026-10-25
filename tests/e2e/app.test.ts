@@ -135,6 +135,47 @@ test('the list can be narrowed to one mailbox, to unread mail and by search', as
     await page.waitForFunction(() => document.querySelectorAll('#message-list .msg').length === 1);
     assert.match((await rows().first().textContent()) ?? '', /boarding pass/);
 });
+test('Sent and Junk open from the sidebar, by mouse and by keyboard, and survive a reload', async () => {
+    await openInbox();
+    await page.click('[data-folder="sent"]');
+    await page.waitForFunction(() => document.querySelectorAll('#message-list .msg').length === 2);
+    assert.equal(await page.textContent('#list-title'), 'Sent items');
+    assert.equal(await page.getAttribute('[data-folder="sent"]', 'aria-current'), 'page');
+    assert.match((await rows().first().textContent()) ?? '', /To: Daniel Okafor/);
+    await rows().first().click();
+    await page.frameLocator('.reader-frame iframe').getByText('revised terms').waitFor();
+    assert.ok(await page.locator('[data-act="reply"]').isDisabled(), 'a sent message cannot be replied to');
+    assert.match((await page.textContent('.reader-from')) ?? '', /To: Daniel Okafor/);
+    await shot('sent');
+
+    // Keyboard only: from the Sent folder to Junk.
+    await page.focus('[data-folder="sent"]');
+    await page.keyboard.press('Tab');
+    assert.ok(await page.evaluate(() => document.activeElement?.matches('[data-folder="junk"]') ?? false));
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => document.querySelector('#list-title')?.textContent === 'Junk email');
+    await page.waitForFunction(() => document.querySelectorAll('#message-list .msg').length === 2);
+    await rows().first().click();
+    await page.locator('.reader-inner .banner--warning').getByText('marked this message as junk').waitFor();
+    await shot('junk');
+
+    // The folder is part of the address, so a reload stays in Junk.
+    assert.match(page.url(), /[?&]folder=junk/);
+    await page.reload();
+    await page.waitForFunction(() => document.querySelectorAll('#message-list .msg').length === 2);
+    assert.equal(await page.textContent('#list-title'), 'Junk email');
+    assert.equal((await page.textContent('[data-total]'))?.trim(), '6', 'junk mail is not counted as unread inbox mail');
+
+    await page.click('[data-folder="inbox"]');
+    await page.waitForFunction(() => document.querySelectorAll('#message-list .msg').length === 13);
+    assert.equal(await page.textContent('#list-title'), 'All mail');
+});
+test('an unknown folder in the address opens the inbox', async () => {
+    await openInbox();
+    await page.goto('/app.html?folder=%3Cimg%20src%3Dx%3E');
+    await page.waitForFunction(() => document.querySelectorAll('#message-list .msg').length === 13);
+    assert.equal(await page.textContent('#list-title'), 'All mail');
+});
 test('the dark theme is remembered across pages', async () => {
     await openInbox();
     assert.equal(await page.getAttribute('html', 'data-theme'), 'light');
@@ -250,7 +291,7 @@ test('more messages load page by page without repeats', async () => {
     await openInbox();
     await page.waitForFunction(() => document.querySelectorAll('#message-list .msg').length === 50);
     await page.click('#more-button');
-    const total = Number((await app.pool.query('SELECT count(*) FROM emails')).rows[0].count);
+    const total = Number((await app.pool.query("SELECT count(*) FROM emails WHERE folder = 'inbox'")).rows[0].count);
     await page.waitForFunction(count => document.querySelectorAll('#message-list .msg').length === count, total);
     const ids = await page.$$eval('#message-list .msg', items => items.map(item => (item as HTMLElement).dataset.id));
     assert.equal(new Set(ids).size, ids.length, 'no message is listed twice');
@@ -265,6 +306,11 @@ test('no page scrolls sideways on a phone', async () => {
     }
     await openInbox();
     await noSideScroll('inbox');
+    await page.goto('/app.html?folder=junk');
+    await page.waitForSelector('#message-list .msg');
+    await rows().first().click();
+    await page.locator('.reader-inner .banner--warning').waitFor();
+    await noSideScroll('junk message');
     await page.goto('/settings.html');
     await page.getByText('demo.work@outlook.example').first().waitFor();
     await noSideScroll('settings');

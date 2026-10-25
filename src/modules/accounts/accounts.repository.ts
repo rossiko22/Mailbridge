@@ -24,8 +24,9 @@ export interface Account {
 const columns = `a.account_id AS id, a.provider, a.email, a.display_name AS "displayName", a.color, a.is_demo AS "isDemo",
     a.needs_reconnect AS "needsReconnect", a.last_error AS "lastError", a.synced_at AS "syncedAt",
     COALESCE(c.total, 0)::int AS total, COALESCE(c.unread, 0)::int AS unread`;
+// Counts are of the inbox only: sent mail is always read and junk should not call for attention.
 const counts = `LEFT JOIN LATERAL (SELECT count(*) AS total, count(*) FILTER (WHERE NOT e.is_read) AS unread
-    FROM emails e WHERE e.account_id = a.account_id) c ON TRUE`;
+    FROM emails e WHERE e.account_id = a.account_id AND e.folder = 'inbox') c ON TRUE`;
 
 export function createAccountsRepository(pool: Pool, vault: TokenVault) {
     async function list(userId: string): Promise<Account[]> {

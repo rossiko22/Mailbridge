@@ -93,6 +93,35 @@ export function parseAddress(value: string | undefined): { name: string; address
     return /^[^\s@<>]+@[^\s@<>]+$/.test(text) ? { name: '', address: text } : { name: text, address: '' };
 }
 
+// A header with several addresses ("Ann <a@x>, \"Doe, Bob\" <b@x>"): commas inside quotes or <> do not split it.
+export function parseAddressList(value: string | undefined): Array<{ name: string; address: string }> {
+    const parts: string[] = [];
+    let current = '';
+    let quoted = false;
+    let angle = false;
+    for (const char of value ?? '') {
+        if (char === '"') quoted = !quoted;
+        else if (char === '<' && !quoted) angle = true;
+        else if (char === '>' && !quoted) angle = false;
+        if (char === ',' && !quoted && !angle) {
+            parts.push(current);
+            current = '';
+        } else current += char;
+    }
+    parts.push(current);
+    return parts.map(part => parseAddress(part)).filter(item => item.address || item.name);
+}
+
+// The To line as people read it: names where known, addresses otherwise. Kept short; it is only a summary.
+export function recipientLabel(people: Array<{ name?: string | undefined; address?: string | undefined }>): string {
+    const text = people
+        .map(person => (person.name || person.address || '').trim())
+        .filter(Boolean)
+        .join(', ');
+    // Cut by code point so an emoji or other astral character is never split in half.
+    return [...text].slice(0, 500).join('');
+}
+
 export interface RawMessage {
     to: string[];
     cc?: string[];

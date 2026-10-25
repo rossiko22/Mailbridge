@@ -2,6 +2,8 @@ import { after, before, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { createAccountsRepository } from '../../src/modules/accounts/accounts.repository.js';
+import type { SyncedMessage } from '../../src/integrations/mail/types.js';
+import { createEmailRepository } from '../../src/modules/emails/emails.repository.js';
 import { createTokenVault } from '../../src/security/token-vault.js';
 import { DEMO_EMAIL, DEMO_PASSWORD, seedDemoData } from '../../src/scripts/demo-data.js';
 import { type ApiError, createClient, register, startApp, type TestApp, type TestClient } from '../support/harness.js';
@@ -26,7 +28,10 @@ interface Account {
 interface Mail {
     id: string;
     accountId: string;
+    folder: string;
     subject: string;
+    senderName: string;
+    recipients: string;
     isRead: boolean;
 }
 
@@ -55,7 +60,7 @@ async function connectGmail(userId: string, email = 'real@gmail.example') {
 }
 const json = (body: unknown, status = 200) =>
     new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
-const gmailMessage = (id: string, labels = ['INBOX', 'UNREAD']) => ({
+const gmailMessage = (id: string, labels = ['INBOX', 'UNREAD'], to = 'Me <real@gmail.example>') => ({
     id,
     threadId: `t-${id}`,
     labelIds: labels,
@@ -66,6 +71,7 @@ const gmailMessage = (id: string, labels = ['INBOX', 'UNREAD']) => ({
         headers: [
             { name: 'Subject', value: `Subject ${id}` },
             { name: 'From', value: 'Ann <ann@example.com>' },
+            { name: 'To', value: to },
             { name: 'Message-ID', value: `<${id}@mail.example>` },
         ],
         body: { data: Buffer.from(`Body of ${id}`).toString('base64url') },
@@ -440,7 +446,7 @@ test('pages continue after the last row: no gaps or repeats, even when mail arri
         SELECT $1, 'bulk-' || n, 'Bulk ' || n, NOW() - make_interval(mins => n / 2) FROM generate_series(1, 120) AS n`,
         [accounts[0]!.id],
     );
-    const total = Number((await app.pool.query('SELECT count(*) FROM emails')).rows[0].count);
+    const total = Number((await app.pool.query("SELECT count(*) FROM emails WHERE folder = 'inbox'")).rows[0].count);
     for (const sort of ['newest', 'oldest']) {
         const seen: string[] = [];
         let cursor: string | null = null;
@@ -517,4 +523,156 @@ test("the repository itself refuses to remove another person's account", async (
     const repository = createAccountsRepository(app.pool, createTokenVault(app.env.TOKEN_ENCRYPTION_KEY));
     assert.equal(await repository.remove(intruder.userId, accounts[0]!.id), false);
     assert.equal((await accountsOf(owner)).accounts.length, accounts.length);
+});
+
+test('Sent and Junk are listed apart from the inbox, which alone is counted', async () => {
+    const client = await demo();
+    const { accounts } = await accountsOf(client);
+    assert.deepEqual(
+        accounts.map(item => [item.total, item.unread]),
+        [
+            [7, 3],
+            [6, 3],
+        ],
+        'sent and junk mail do not add to the counts',
+    );
+    const inbox = await mailOf(client);
+    assert.equal(inbox.emails.length, 13);
+    assert.ok(inbox.emails.every(item => item.folder === 'inbox'));
+    assert.deepEqual(await mailOf(client, '?folder=inbox'), inbox);
+
+    const sent = await mailOf(client, '?folder=sent');
+    assert.deepEqual(
+        sent.emails.map(item => [item.folder, item.subject, item.recipients]),
+        [
+            ['sent', 'Contract renewal', 'Daniel Okafor'],
+            ['sent', 'Re: Climbing on Sunday', 'Lena Fischer'],
+        ],
+    );
+    const junk = await mailOf(client, '?folder=junk');
+    assert.deepEqual(
+        junk.emails.map(item => item.subject),
+        ['Your mailbox is almost full — verify now', 'You have WON a gift card — claim within 24 hours'],
+    );
+    // The other filters work inside a folder.
+    assert.equal((await mailOf(client, `?folder=junk&account=${accounts[1]!.id}`)).emails.length, 1);
+    assert.equal((await mailOf(client, '?folder=sent&unread=true')).emails.length, 0);
+    assert.deepEqual(
+        (await mailOf(client, '?folder=junk&search=gift')).emails.map(item => item.subject),
+        ['You have WON a gift card — claim within 24 hours'],
+    );
+    assert.equal((await mailOf(client, '?search=gift')).emails.length, 0, 'inbox search does not reach junk');
+
+    const detail = (await (await client.get(`/emails/${sent.emails[0]!.id}`)).json()) as { email: Mail };
+    assert.deepEqual([detail.email.folder, detail.email.recipients], ['sent', 'Daniel Okafor']);
+
+    for (const folder of ['trash', 'SENT', '', 'inbox,sent']) {
+        const response = await client.get(`/emails?folder=${encodeURIComponent(folder)}`);
+        assert.equal(response.status, 400, folder);
+        assert.equal(((await response.json()) as ApiError).error.code, 'validation_failed');
+    }
+});
+test("another person's Sent and Junk stay invisible", async () => {
+    await demo();
+    const { client: intruder } = await register(app, 'intruder@example.com');
+    for (const folder of ['sent', 'junk']) assert.deepEqual((await mailOf(intruder, `?folder=${folder}`)).emails, []);
+});
+test('syncing Gmail fills Inbox, Sent and Junk, and follows mail as it moves between them', async () => {
+    const { client, user } = await register(app, 'person@example.com');
+    const accountId = await connectGmail(user.userId);
+    let labels: Record<string, string[]> = { m1: ['INBOX', 'UNREAD'], s1: ['SENT'], j1: ['SPAM', 'UNREAD'], self: ['INBOX', 'SENT'] };
+    let query: URLSearchParams | undefined;
+    app.setUpstream(url => {
+        if (url.hostname !== 'gmail.googleapis.com') return undefined;
+        const path = url.pathname.replace('/gmail/v1/users/me/', '');
+        if (path === 'profile') return json({ historyId: '100' });
+        if (path === 'messages') {
+            query = url.searchParams;
+            return json({ messages: Object.keys(labels).map(id => ({ id })) });
+        }
+        if (path === 'history')
+            return json({ historyId: '200', history: [{ labelsRemoved: [{ message: { id: 'j1' } }, { message: { id: 's1' } }] }] });
+        const id = path.replace('messages/', '');
+        return labels[id]
+            ? json(gmailMessage(id, labels[id], id === 's1' ? 'Bob <bob@example.com>, carol@example.com' : undefined))
+            : json({}, 404);
+    });
+
+    assert.deepEqual(await (await client.post(`/accounts/${accountId}/sync`)).json(), { processed: 4, removed: 0, hasMore: false });
+    assert.equal(query?.get('includeSpamTrash'), 'true');
+    const subjects = async (folder: string) => (await mailOf(client, `?folder=${folder}`)).emails.map(item => item.subject).sort();
+    assert.deepEqual(await subjects('inbox'), ['Subject m1', 'Subject self']);
+    assert.deepEqual(await subjects('sent'), ['Subject s1']);
+    assert.deepEqual(await subjects('junk'), ['Subject j1']);
+    assert.equal((await mailOf(client, '?folder=sent')).emails[0]!.recipients, 'Bob, carol@example.com');
+    assert.deepEqual(
+        (await accountsOf(client)).accounts.map(item => [item.total, item.unread]),
+        [[2, 1]],
+    );
+
+    // j1 was marked "not spam" and s1 was deleted.
+    labels = { ...labels, j1: ['INBOX'], s1: ['SENT', 'TRASH'] };
+    assert.deepEqual(await (await client.post(`/accounts/${accountId}/sync`)).json(), { processed: 1, removed: 1, hasMore: false });
+    assert.deepEqual(await subjects('inbox'), ['Subject j1', 'Subject m1', 'Subject self']);
+    assert.deepEqual(await subjects('sent'), []);
+    assert.deepEqual(await subjects('junk'), []);
+});
+test('a move between two folders synced separately never loses the message, in either order', async () => {
+    const { user } = await register(app, 'person@example.com');
+    const accountId = await connectGmail(user.userId);
+    const repository = createEmailRepository(app.pool);
+    const fields = { subject: 'Moved', sender: { name: 'Ann', address: 'ann@example.com' }, isRead: false };
+    const apply = (messages: SyncedMessage[]) => repository.syncLocked(accountId, async () => ({ messages, cursor: '{}', hasMore: false }));
+    const folderOfMoved = async () =>
+        (
+            await app.pool.query<{ folder: string }>("SELECT folder FROM emails WHERE account_id = $1 AND provider_id = 'x'", [accountId])
+        ).rows.map(row => row.folder);
+
+    await apply([{ id: 'x', folder: 'inbox', fields }]);
+    // Outlook reports a move to Junk as "removed" in the Inbox delta and "added" in the Junk delta.
+    await apply([
+        { id: 'x', folder: 'junk', fields },
+        { id: 'x', folder: 'inbox', removed: true, fields: {} },
+    ]);
+    assert.deepEqual(await folderOfMoved(), ['junk'], 'the inbox removal did not delete the copy now in Junk');
+    await apply([
+        { id: 'x', folder: 'junk', removed: true, fields: {} },
+        { id: 'x', folder: 'inbox', fields },
+    ]);
+    assert.deepEqual(await folderOfMoved(), ['inbox']);
+    // A removal without a folder (Gmail: left every folder shown) removes it wherever it is.
+    await apply([{ id: 'x', removed: true, fields: {} }]);
+    assert.deepEqual(await folderOfMoved(), []);
+});
+test('a sent message can be forwarded but not replied to', async () => {
+    const { client, user } = await register(app, 'person@example.com');
+    const accountId = await connectGmail(user.userId);
+    const sends: string[] = [];
+    app.setUpstream((url, init) => {
+        if (url.hostname !== 'gmail.googleapis.com') return undefined;
+        const path = url.pathname.replace('/gmail/v1/users/me/', '');
+        if (path === 'profile') return json({ historyId: '100' });
+        if (path === 'messages') return json({ messages: [{ id: 's1' }] });
+        if (path === 'messages/send') {
+            sends.push(String(init.body));
+            return json({ id: 'new' });
+        }
+        return json(gmailMessage('s1', ['SENT'], 'bob@example.com'));
+    });
+    assert.equal((await client.post(`/accounts/${accountId}/sync`)).status, 200);
+    const [email] = (await mailOf(client, '?folder=sent')).emails;
+    const reply = await client.post(`/emails/${email!.id}/send`, { action: 'reply', requestId: randomUUID(), comment: 'Hello' });
+    assert.equal(reply.status, 400);
+    assert.equal(((await reply.json()) as ApiError).error.code, 'validation_failed');
+    assert.equal(sends.length, 0);
+    const outgoing = await app.pool.query('SELECT 1 FROM outgoing_messages');
+    assert.equal(outgoing.rowCount, 0, 'a refused reply leaves no send record');
+    const forward = await client.post(`/emails/${email!.id}/send`, {
+        action: 'forward',
+        requestId: randomUUID(),
+        comment: 'FYI',
+        recipients: ['carol@example.com'],
+    });
+    assert.equal(forward.status, 202);
+    assert.equal(sends.length, 1);
 });

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { recipient, uuid } from '../../http/validate.js';
+import { mailFolders } from '../../integrations/mail/types.js';
 
 // Request input of /emails, as in contracts/openapi.yaml.
 
@@ -17,6 +18,7 @@ export const listQuery = z.strictObject({
     sort: z.enum(['newest', 'oldest'], { error: 'Invalid mailbox filters.' }).default('newest'),
     search: z.string({ error: 'Invalid mailbox filters.' }).max(200, { error: 'Search for at most 200 characters.' }).trim().default(''),
     account: uuid('Invalid mailbox filters.').optional(),
+    folder: z.enum(mailFolders, { error: 'Invalid mailbox filters.' }).default('inbox'),
     unread: z.enum(['true', 'false'], { error: 'Invalid mailbox filters.' }).optional(),
 });
 

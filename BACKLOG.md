@@ -10,7 +10,9 @@ Nothing here is built without the owner choosing it first.
 - [ ] Session list and "sign out other sessions"
 - [ ] Email verification at sign-up
 - [ ] Two-factor sign-in: TOTP first, then passkeys
-- [ ] Folders / labels
+- [ ] Folders / labels beyond Inbox, Sent and Junk (custom Outlook folders, Gmail labels)
+- [ ] Mark as junk / not junk from the app (Gmail: add or remove SPAM; Outlook: move to or from Junk Email)
+- [ ] Search recipients of sent mail (the `recipients` column is not in `search_vector` yet)
 - [ ] Threading
 - [ ] Account deletion and data export
 - [ ] Server-side background sync (worker + job table)

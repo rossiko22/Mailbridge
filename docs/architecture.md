@@ -61,7 +61,7 @@ harness) create those three and nothing else does. `src/config/env.ts` validates
 | `auth` | sign-up, sign-in, sign-out, password change and reset, the current user, the person's own activity |
 | `users` | display name and profile photo |
 | `accounts` | connected mailboxes, the OAuth connect and callback flow, sync trigger, removal |
-| `emails` | the combined inbox (keyset pages, search), reading, export, attachments, reply, forward, compose |
+| `emails` | the combined Inbox, Sent and Junk (keyset pages, search), reading, export, attachments, reply, forward, compose |
 | `audit` | the security event log (insert-only) |
 
 ## Mail providers
@@ -79,7 +79,9 @@ ADR 0006). The `CredentialStore` reads them without a lock; a token refresh (onc
 is saved with compare-and-swap, so no database connection waits on the network.
 
 **Sync** is pulled by the browser, one page per request: the first sync takes the last 90 days, later ones only
-changes (Graph delta links, Gmail history IDs). An account is claimed with a five-minute lease
+changes (Graph delta links, Gmail history IDs). Inbox, Sent and Junk are synced together: Gmail by labels
+(INBOX, SENT, SPAM) from one history, Outlook with one delta link per folder kept as JSON in `sync_cursor`; each
+saved message has one `folder` (ADR 0012). An account is claimed with a five-minute lease
 (`mail_accounts.sync_lease_*`), the page is fetched with no connection held, and saved in a short transaction only if
 the lease is still valid.
 
@@ -93,7 +95,7 @@ the lease is still valid.
 | `password_resets` | reset tokens | only a SHA-256 hash; single use; 30 minutes |
 | `user_avatars` | profile photos | ≤ 512 KiB, signature-checked |
 | `mail_accounts` | connected mailboxes | encrypted credentials, sync cursor and lease |
-| `emails` | saved copies of inbox messages | `search_vector` (full text), trigram and inbox-order indexes |
+| `emails` | saved copies of Inbox, Sent and Junk messages | `folder`, `recipients`; `search_vector` (full text), trigram and per-folder order indexes |
 | `email_bodies` | fetched HTML or text bodies | cache; deleted with the message |
 | `outgoing_messages` | every send by request ID | idempotency and the reply/forward history |
 | `audit_events` | security events, 90 days | insert-only, enforced by triggers (migration 010) |

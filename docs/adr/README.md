@@ -13,3 +13,4 @@
 | 9 | [No database lock or connection held across a provider call](0009-no-database-lock-across-network-calls.md) |
 | 10 | [Keyset pagination and indexed search](0010-keyset-pagination-and-search-indexes.md) |
 | 11 | [Optimistic locking only where two edits can clash](0011-optimistic-locking-when-needed.md) |
+| 12 | [Sent and Junk: one folder per saved message](0012-one-folder-per-message.md) |

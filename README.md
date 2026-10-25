@@ -35,6 +35,7 @@ Connect any number of mailboxes and read them together, with each account still 
 ## What it does
 
 - **One inbox for every account.** Mail from all connected Outlook and Gmail accounts appears in a single list, colour-coded by mailbox, with per-account views, an unread filter, search and sorting.
+- **Inbox, Sent and Junk.** Each folder combines every account, like the inbox. Sent mail is listed by recipient; junk mail opens with a warning, and its images stay off like everywhere else.
 - **Read mail safely.** Message bodies render in a sandboxed frame that cannot run scripts, and remote images stay off until you ask for them.
 - **Reply, forward and compose** from any connected account. Read state is written back to the provider, so Outlook and Gmail stay in step.
 - **Attachments and export.** Download attachments, or save any message as an `.eml` file.
@@ -87,7 +88,7 @@ flowchart LR
 
 - **No front-end build step.** The interface is hand-written HTML, CSS and JavaScript served as static files.
 - **One provider interface.** Outlook and Gmail each implement the same small `MailClient` contract (sync, body, attachments, send, mark read), so the rest of the app never asks which provider it is talking to.
-- **Incremental sync.** The first sync loads the last 90 days of the inbox. After that, only changes are fetched: Graph delta links for Outlook and history IDs for Gmail. An expired checkpoint rebuilds itself.
+- **Incremental sync.** The first sync loads the last 90 days of the Inbox, Sent and Junk folders. After that, only changes are fetched: Graph delta links for Outlook and history IDs for Gmail. An expired checkpoint rebuilds itself.
 - **Gmail quota aware.** Gmail allows 6,000 quota units per mailbox per minute. The client budgets its requests, and when Google reports the minute is used up it waits for the next one instead of failing.
 - **Sends are never duplicated.** Every send carries a request ID that is recorded before the provider is called. A retry of an accepted request is answered from the record, and an uncertain outcome is reported as uncertain rather than retried.
 - **No database lock waits on the network.** A sync claims its account with a short lease, and token refreshes are saved with compare-and-swap, so a slow provider never ties up a database connection.
@@ -174,7 +175,7 @@ Everything runs on Node's built-in test runner with no extra test framework.
 | --- | --- | --- | --- |
 | Unit | `npm test` | nothing | Gmail and Outlook clients against recorded responses, quota budgeting, cursor validation, MIME handling, HTML sanitizing, credential encryption and key rotation, validation rules, configuration rules |
 | Integration | `npm run test:integration` | PostgreSQL | The real app over HTTP against a real database. Driven by the contract: every endpoint answers `401` without a session, `404` for another person's data and `400` with the failing fields for invalid input. Also sessions, throttling, password reset, OAuth, sync leases, send idempotency, search, paging, logs, the audit guard and the least-privilege database role |
-| Browser | `npm run test:e2e` and `npm run test:e2e:firefox` | PostgreSQL, Chromium/Firefox | Sign-in, the inbox, reading, filters, search, paging, settings, sign-out, keyboard-only use, Back after sign-out, and no sideways scrolling at phone width. Any console error or Content-Security-Policy violation fails the test |
+| Browser | `npm run test:e2e` and `npm run test:e2e:firefox` | PostgreSQL, Chromium/Firefox | Sign-in, the inbox, Sent and Junk, reading, filters, search, paging, settings, sign-out, keyboard-only use, Back after sign-out, and no sideways scrolling at phone width. Any console error or Content-Security-Policy violation fails the test |
 | Mutation | `npm run test:mutation` | PostgreSQL | Plants 22 deliberate bugs in security- and logic-critical code, one at a time, and requires the tests to catch each one ([tests/mutation](tests/mutation)) |
 
 ```sh
